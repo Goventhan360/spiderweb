@@ -1,10 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ShieldCheck, CheckCircle2, Lock } from 'lucide-react';
 
 export default function GoogleAuthLoading({ onComplete, userEmail = "candidate@demo.webloom.ai", userName = "Loading..." }) {
   const [progress, setProgress] = useState(0);
   const [stepIndex, setStepIndex] = useState(0);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   const steps = [
     { icon: <Lock className="text-[#4285F4]" size={18} />, text: "Connecting to Google OAuth 2.0 Gateway..." },
@@ -19,20 +24,20 @@ export default function GoogleAuthLoading({ onComplete, userEmail = "candidate@d
         if (prev >= 100) {
           clearInterval(timer);
           setTimeout(() => {
-            if (onComplete) onComplete();
-          }, 300);
+            if (onCompleteRef.current) onCompleteRef.current();
+          }, 200);
           return 100;
         }
-        const next = prev + 4;
+        const next = prev + 5;
         if (next > 75) setStepIndex(3);
         else if (next > 50) setStepIndex(2);
         else if (next > 25) setStepIndex(1);
         return next;
       });
-    }, 80);
+    }, 60);
 
     return () => clearInterval(timer);
-  }, [onComplete]);
+  }, []);
 
   return (
     <motion.div 
