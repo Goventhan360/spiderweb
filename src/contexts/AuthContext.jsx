@@ -231,9 +231,6 @@ export function AuthProvider({ children }) {
   const signInWithGoogle = useCallback(async () => {
     if (!configured) {
       const demoUser = DEMO_USERS.candidate;
-      setUser(demoUser);
-      setProfile(demoUser);
-      setIsDemo(true);
       localStorage.setItem('webloom_demo_role', 'candidate');
       return { user: demoUser, error: null };
     }
@@ -241,7 +238,7 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/candidate/dashboard`,
+        redirectTo: `${window.location.origin}/candidate/feed`,
       },
     });
     return { data, error };
