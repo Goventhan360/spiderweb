@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/* ===== WEBLOOM DESIGN SYSTEM ===== */
+
+@theme {
+  /* Colors (Light Theme Defaults) */
+  --color-primary: #0F4C3A;
+  --color-primary-dark: #0A3A2C;
+  --color-primary-light: #1F6E52;
+  --color-gold: #A9824F;
+  --color-gold-light: #C6A26B;
+  --color-bg: #F7F8F4;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #EEF2ED;
+  --color-border: #DBE2D9;
+  --color-text: #14201A;
+  --color-text-muted: #57685E;
+  --color-text-soft: #8B9A90;
+
+  /* Font families */
+  --font-serif: "Source Serif 4", serif;
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+  
+  --font-heading: "Source Serif 4", serif;
+  --font-body: "Inter", sans-serif;
+
+  /* Shadows */
+  --shadow-card: 0 1px 2px rgba(15,76,58,0.06);
+}
+
+[data-theme="dark"] {
+  --color-primary: #3D9C79;
+  --color-primary-dark: #2E7A5E;
+  --color-primary-light: #57B491;
+  --color-gold: #D2B27F;
+  --color-gold-light: #E2C89A;
+  --color-bg: #0B1512;
+  --color-surface: #101F19;
+  --color-surface-alt: #16261F;
+  --color-border: #24352C;
+  --color-text: #EDF3EF;
+  --color-text-muted: #9DB0A6;
+  --color-text-soft: #6C7C73;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* ===== BASE STYLES ===== */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  width: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ===== CUSTOM SCROLLBAR ===== */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary-light);
+}
+
+/* ===== UTILITY CLASSES ===== */
+.serif { font-family: var(--font-serif); }
+.mono { font-family: var(--font-mono); }
+
+.glass {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.glass-light {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  opacity: 0.8;
+}
+
+.glass-strong {
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+}
+
+/* Hide scrollbar utility */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-gold-light);
+  color: #14201A;
+}
+
+/* Focus outline */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Smooth page transitions */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.3s ease-out;
+}
