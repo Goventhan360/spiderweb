@@ -71,8 +71,6 @@ export function AuthProvider({ children }) {
       full_name: userMeta?.full_name || userMeta?.name || userMeta?.email?.split('@')[0] || 'User',
       role: userMeta?.role || 'candidate',
       avatar_url: userMeta?.avatar_url || userMeta?.picture || null,
-      email: userMeta?.email || '',
-      created_at: new Date().toISOString(),
     };
 
     if (tableMissingRef.current) {

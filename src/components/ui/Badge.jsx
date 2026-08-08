@@ -36,7 +36,13 @@ export default function Badge({
         className
       )}
     >
-      {Icon && <Icon className="mr-1 h-3 w-3" />}
+      {Icon && (
+        typeof Icon === 'function' ? (
+          <Icon className="mr-1 h-3 w-3" />
+        ) : (
+          <span className="mr-1 inline-flex items-center">{Icon}</span>
+        )
+      )}
       {children}
     </div>
   );

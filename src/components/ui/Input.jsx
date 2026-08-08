@@ -36,7 +36,7 @@ const Input = forwardRef(
         <div className="relative">
           {LeftIcon && (
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
-              <LeftIcon className="h-4 w-4" />
+              {typeof LeftIcon === 'function' ? <LeftIcon className="h-4 w-4" /> : LeftIcon}
             </div>
           )}
           <input
@@ -53,7 +53,7 @@ const Input = forwardRef(
           />
           {RightIcon && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted">
-              <RightIcon className="h-4 w-4" />
+              {typeof RightIcon === 'function' ? <RightIcon className="h-4 w-4" /> : RightIcon}
             </div>
           )}
         </div>
