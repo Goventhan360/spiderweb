@@ -5,7 +5,7 @@ import { cn } from '@/utils/helpers';
 
 /**
  * Reusable Button component with Framer Motion animations
- * and various styles for the Cyber Spider Web theme.
+ * and flexible icon / element rendering.
  */
 const Button = forwardRef(
   (
@@ -14,13 +14,14 @@ const Button = forwardRef(
       variant = 'primary',
       size = 'md',
       isLoading = false,
-      leftIcon: LeftIcon,
-      rightIcon: RightIcon,
-      icon: Icon,
+      leftIcon,
+      rightIcon,
+      icon,
       children,
       disabled,
       type = 'button',
       fullWidth = false,
+      as: Component = 'button',
       asChild,
       ...props
     },
@@ -49,10 +50,26 @@ const Button = forwardRef(
       lg: 'h-12 px-6 text-base',
     };
 
+    const renderIconItem = (iconVal, defaultMargin = '') => {
+      if (!iconVal) return null;
+      // If it's a valid React element (e.g., <Settings size={18} />)
+      if (typeof iconVal === 'object' && iconVal !== null) {
+        return <span className={cn('inline-flex items-center shrink-0', defaultMargin)}>{iconVal}</span>;
+      }
+      // If it's a component function (e.g., Settings)
+      if (typeof iconVal === 'function') {
+        const IconComponent = iconVal;
+        return <IconComponent className={cn('h-4 w-4 text-current shrink-0', defaultMargin)} />;
+      }
+      return null;
+    };
+
+    const MotionComponent = motion(Component);
+
     return (
-      <motion.button
+      <MotionComponent
         ref={ref}
-        type={type}
+        type={Component === 'button' ? type : undefined}
         disabled={disabled || isLoading}
         className={cn(
           baseStyles,
@@ -66,19 +83,13 @@ const Button = forwardRef(
         {...props}
       >
         {isLoading && (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin text-current" />
+          <Loader2 className="mr-2 h-4 w-4 animate-spin text-current shrink-0" />
         )}
-        {!isLoading && LeftIcon && (
-          <LeftIcon className="mr-2 h-4 w-4 text-current" />
-        )}
-        {!isLoading && Icon && (
-          <span className="mr-2 flex items-center">{Icon}</span>
-        )}
+        {!isLoading && renderIconItem(leftIcon, 'mr-2')}
+        {!isLoading && renderIconItem(icon, 'mr-2')}
         {children}
-        {!isLoading && RightIcon && (
-          <RightIcon className="ml-2 h-4 w-4 text-current" />
-        )}
-      </motion.button>
+        {!isLoading && renderIconItem(rightIcon, 'ml-2')}
+      </MotionComponent>
     );
   }
 );

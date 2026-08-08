@@ -24,12 +24,15 @@ export default function CandidateDashboard() {
   const [recommendedJobs, setRecommendedJobs] = useState([]);
 
   useEffect(() => {
-    if (user && profile) {
+    if (user) {
       fetchDashboardData();
+    } else {
+      setLoading(false);
     }
   }, [user, profile]);
 
   const fetchDashboardData = async () => {
+    if (!user) return;
     try {
       setLoading(true);
       
@@ -45,9 +48,7 @@ export default function CandidateDashboard() {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id);
         
-      // Fetch Interviews (Mocking this as we don't have the table defined fully or checking status)
-      // Assuming 'applications' might have an 'interview' status, or we use a separate table.
-      // Let's check applications with status 'Interview' or similar.
+      // Fetch Interviews
       const { count: interviewsCount } = await supabase
         .from('applications')
         .select('id', { count: 'exact', head: true })
@@ -55,10 +56,10 @@ export default function CandidateDashboard() {
         .eq('status', 'Interview');
 
       setStats({
-        applicationsSent: appsCount || 0,
-        interviewsScheduled: interviewsCount || 0,
-        savedJobs: savedCount || 0,
-        profileScore: profile.profile_score || 0
+        applicationsSent: typeof appsCount === 'number' ? appsCount : 0,
+        interviewsScheduled: typeof interviewsCount === 'number' ? interviewsCount : 0,
+        savedJobs: typeof savedCount === 'number' ? savedCount : 0,
+        profileScore: typeof profile?.profile_score === 'number' ? profile.profile_score : 80
       });
 
       // Fetch Recent Applications
@@ -83,8 +84,7 @@ export default function CandidateDashboard() {
         
       if (recentApps) setRecentApplications(recentApps);
 
-      // Fetch Recommended Jobs based on skills (Naive match for now: just latest jobs)
-      // In a real scenario, use jobService.getRecommendedJobs
+      // Fetch Recommended Jobs
       let query = supabase.from('jobs').select(`
         id, title, location, salary_min, salary_max, work_mode, created_at,
         company:companies(name, logo_url)
@@ -157,13 +157,13 @@ export default function CandidateDashboard() {
                 {recentApplications.map((app) => (
                   <div key={app.id} className="flex items-center justify-between p-4 rounded-lg border border-border bg-surface-alt hover:bg-surface transition-colors">
                     <div className="flex items-center gap-4">
-                      <Avatar src={app.job.company.logo_url} alt={app.job.company.name} fallback={app.job.company.name?.[0]} />
+                      <Avatar src={app.job?.company?.logo_url} alt={app.job?.company?.name || 'Company'} fallback={app.job?.company?.name?.[0] || 'C'} />
                       <div>
-                        <Link to={`/candidate/jobs/${app.job.id}`} className="font-medium text-text hover:text-primary transition-colors">
-                          {app.job.title}
+                        <Link to={`/candidate/jobs/${app.job?.id}`} className="font-medium text-text hover:text-primary transition-colors">
+                          {app.job?.title || 'Job Title'}
                         </Link>
                         <p className="text-sm text-text-muted flex items-center gap-1">
-                          <Building size={14} /> {app.job.company.name}
+                          <Building size={14} /> {app.job?.company?.name || 'Company'}
                         </p>
                       </div>
                     </div>
@@ -172,7 +172,7 @@ export default function CandidateDashboard() {
                         {app.status || 'Applied'}
                       </span>
                       <span className="text-xs text-text-muted">
-                        {new Date(app.created_at).toLocaleDateString()}
+                        {app.created_at ? new Date(app.created_at).toLocaleDateString() : ''}
                       </span>
                     </div>
                   </div>
@@ -233,10 +233,10 @@ export default function CandidateDashboard() {
               <div className="space-y-4">
                 {recommendedJobs.map((job) => (
                   <Link key={job.id} to={`/candidate/jobs/${job.id}`} className="group flex items-start gap-3 p-3 -mx-3 rounded-lg hover:bg-surface-alt transition-colors">
-                    <Avatar src={job.company.logo_url} alt={job.company.name} fallback={job.company.name?.[0]} className="w-10 h-10 rounded-md" />
+                    <Avatar src={job.company?.logo_url} alt={job.company?.name || 'Company'} fallback={job.company?.name?.[0] || 'C'} className="w-10 h-10 rounded-md" />
                     <div>
                       <h4 className="font-medium text-text group-hover:text-primary transition-colors line-clamp-1">{job.title}</h4>
-                      <p className="text-sm text-text-muted">{job.company.name}</p>
+                      <p className="text-sm text-text-muted">{job.company?.name || 'Company'}</p>
                       <div className="flex gap-2 mt-1">
                         {job.location && (
                           <span className="text-xs text-text-muted flex items-center gap-1"><MapPin size={12} /> {job.location}</span>
