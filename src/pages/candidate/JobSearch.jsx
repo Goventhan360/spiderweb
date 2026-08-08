@@ -71,7 +71,7 @@ export default function JobSearch() {
       let query = supabase
         .from('jobs')
         .select('*, company:companies(name, logo_url)', { count: 'exact' })
-        .eq('status', 'open');
+        .eq('status', 'active');
 
       if (filters.query) {
         query = query.or(`title.ilike.%${filters.query}%,description.ilike.%${filters.query}%`);

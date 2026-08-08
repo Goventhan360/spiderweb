@@ -88,7 +88,7 @@ export default function CandidateDashboard() {
       let query = supabase.from('jobs').select(`
         id, title, location, salary_min, salary_max, work_mode, created_at,
         company:companies(name, logo_url)
-      `).eq('status', 'open').order('created_at', { ascending: false }).limit(3);
+      `).eq('status', 'active').order('created_at', { ascending: false }).limit(3);
       
       const { data: recommended } = await query;
       if (recommended) setRecommendedJobs(recommended);

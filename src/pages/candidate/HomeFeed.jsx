@@ -75,7 +75,7 @@ export default function HomeFeed() {
           *,
           company:companies (name, logo_url)
         `, { count: 'exact' })
-        .eq('status', 'open');
+        .eq('status', 'active');
 
       if (search) {
         query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
@@ -241,9 +241,9 @@ export default function HomeFeed() {
                   <Card className="p-6 hover:border-primary/50 transition-colors group">
                     <div className="flex flex-col sm:flex-row gap-6">
                       <Avatar 
-                        src={job.company.logo_url} 
-                        alt={job.company.name} 
-                        fallback={job.company.name?.[0]} 
+                        src={job.company?.logo_url} 
+                        alt={job.company?.name} 
+                        fallback={job.company?.name?.[0] || '?'} 
                         className="w-16 h-16 rounded-xl shrink-0" 
                       />
                       
@@ -255,7 +255,7 @@ export default function HomeFeed() {
                             </h3>
                             <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-text-muted">
                               <span className="flex items-center gap-1 font-medium text-text">
-                                <Building size={16} /> {job.company.name}
+                                <Building size={16} /> {job.company?.name || 'Unknown Company'}
                               </span>
                               <span className="flex items-center gap-1">
                                 <MapPin size={16} /> {job.location || 'Not specified'}

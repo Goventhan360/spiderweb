@@ -64,7 +64,7 @@ export default function JobDetail() {
       const { data: similar } = await supabase
         .from('jobs')
         .select('*, company:companies(name, logo_url)')
-        .eq('status', 'open')
+        .eq('status', 'active')
         .neq('id', id)
         .or(`job_type.eq.${jobData.job_type},company_id.eq.${jobData.company_id}`)
         .limit(3);
