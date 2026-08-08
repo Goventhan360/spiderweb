@@ -138,23 +138,26 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    /* Real Supabase auth with demo role fallback */
+    /* Real Supabase auth — no demo fallback when configured */
     const initAuth = async () => {
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
         if (currentSession?.user) {
           setUser(currentSession.user);
+          setIsDemo(false);
           await fetchProfile(currentSession.user.id, currentSession.user.user_metadata);
         } else {
-          // If no Supabase auth session, load active demo role (default candidate)
-          const activeRole = demoRole && DEMO_USERS[demoRole] ? demoRole : 'candidate';
-          setUser(DEMO_USERS[activeRole]);
-          setProfile(DEMO_USERS[activeRole]);
-          setIsDemo(true);
+          // No active session — user is NOT authenticated
+          setUser(null);
+          setProfile(null);
+          setIsDemo(false);
         }
       } catch (err) {
         console.error('Auth initialization error:', err);
+        setUser(null);
+        setProfile(null);
+        setIsDemo(false);
       } finally {
         setLoading(false);
       }
@@ -166,14 +169,13 @@ export function AuthProvider({ children }) {
       setSession(newSession);
       if (newSession?.user) {
         setUser(newSession.user);
+        setIsDemo(false);
         await fetchProfile(newSession.user.id, newSession.user.user_metadata);
       } else {
-        const activeRole = localStorage.getItem('webloom_demo_role') || localStorage.getItem('spiderweb_demo_role') || 'candidate';
-        if (DEMO_USERS[activeRole]) {
-          setUser(DEMO_USERS[activeRole]);
-          setProfile(DEMO_USERS[activeRole]);
-          setIsDemo(true);
-        }
+        // Session ended — user is signed out
+        setUser(null);
+        setProfile(null);
+        setIsDemo(false);
       }
     });
 

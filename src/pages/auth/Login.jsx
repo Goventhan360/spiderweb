@@ -16,7 +16,7 @@ const loginSchema = z.object({
 });
 
 export default function Login() {
-  const { signIn, signInWithGoogle, switchRole } = useAuth();
+  const { signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -24,32 +24,52 @@ export default function Login() {
   const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: 'candidate@demo.webloom.ai',
-      password: 'password123',
+      email: '',
+      password: '',
     }
   });
 
-  const onSubmit = async () => {
+
+  const onSubmit = async ({ email, password }) => {
     setIsLoading(true);
-    setTimeout(() => {
-      switchRole('candidate');
+    try {
+      const { user, error } = await signIn({ email, password });
+      if (error) {
+        toast.error(error.message || 'Invalid credentials. Please try again.');
+        return;
+      }
+      if (user) {
+        toast.success('Signed in successfully!');
+        const role = user?.user_metadata?.role || 'candidate';
+        const dashboardMap = {
+          recruiter: '/recruiter/dashboard',
+          admin: '/admin/dashboard',
+        };
+        navigate(dashboardMap[role] || '/candidate/feed');
+      }
+    } catch (err) {
+      toast.error('Something went wrong. Please try again.');
+    } finally {
       setIsLoading(false);
-      toast.success('Logged in as Candidate!');
-      navigate('/candidate/feed');
-    }, 600);
+    }
   };
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
-    await signInWithGoogle();
+    const { error } = await signInWithGoogle();
+    if (error) {
+      toast.error(error.message || 'Google sign-in failed.');
+      setIsGoogleLoading(false);
+    }
+    // On success, Supabase redirects the browser — onGoogleAuthComplete handles return
   };
 
   const onGoogleAuthComplete = () => {
     setIsGoogleLoading(false);
-    switchRole('candidate');
     toast.success('Signed in with Google successfully!');
     navigate('/candidate/feed');
   };
+
 
   return (
     <>
@@ -108,11 +128,6 @@ export default function Login() {
           <p className="text-[14px] text-text-muted">Access jobs, career coaching, and AI resume studio.</p>
         </div>
 
-        <div className="mb-[20px] p-[12px] bg-surface-alt border border-primary/30 rounded-[6px] text-xs text-text-muted">
-          <strong className="text-primary">Demo Credentials:</strong><br/>
-          Email: <span className="text-text font-mono">candidate@demo.webloom.ai</span><br/>
-          Password: <span className="text-text font-mono">password123</span>
-        </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-[18px]">
           <div>
