@@ -1,47 +1,77 @@
-import { isConfigured } from '@/utils/helpers';
 import { supabase } from '@/supabase/client';
-import { storageService } from './storageService';
-
-const DEMO_CONVERSATIONS = [
-  { id: '1', participant: { id: 'user-2', full_name: 'John Recruiter' }, last_message: 'Hi there!', unread: 2 }
-];
-
-const DEMO_MESSAGES = [
-  { id: '1', sender_id: 'user-2', receiver_id: 'demo-user-123', content: 'Hi there!', created_at: new Date().toISOString() }
-];
 
 export const messageService = {
   async getConversations(userId) {
-    if (!isConfigured()) return { data: DEMO_CONVERSATIONS, error: null };
-    const { data, error } = await supabase.from('conversations').select('*').contains('participants', [userId]);
+    // A simplified distinct conversation getter
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*, sender:profiles!sender_id(*), receiver:profiles!receiver_id(*)')
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
+    
+    if (error) return { data: null, error };
+    
+    const conversationsMap = new Map();
+    data.forEach(msg => {
+      const otherUser = msg.sender_id === userId ? msg.receiver : msg.sender;
+      if (!otherUser) return;
+      if (!conversationsMap.has(otherUser.id)) {
+        conversationsMap.set(otherUser.id, {
+          user: otherUser,
+          latestMessage: msg,
+          unreadCount: (msg.receiver_id === userId && !msg.is_read) ? 1 : 0
+        });
+      } else {
+        const conv = conversationsMap.get(otherUser.id);
+        if (msg.receiver_id === userId && !msg.is_read) {
+          conv.unreadCount++;
+        }
+      }
+    });
+
+    return { data: Array.from(conversationsMap.values()), error: null };
+  },
+
+  async sendMessage({ sender_id, receiver_id, content, file_url = null }) {
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({ sender_id, receiver_id, content, file_url })
+      .select()
+      .single();
     return { data, error };
   },
-  async getMessages(senderId, receiverId) {
-    if (!isConfigured()) return { data: DEMO_MESSAGES, error: null };
-    const { data, error } = await supabase.from('messages').select('*').or(`and(sender_id.eq.${senderId},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${senderId})`).order('created_at', { ascending: true });
+
+  async getMessages(userId, otherUserId) {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
+      .order('created_at', { ascending: true });
     return { data, error };
   },
-  async sendMessage(senderId, receiverId, content, fileUrl = null) {
-    if (!isConfigured()) return { data: { id: Date.now().toString(), sender_id: senderId, receiver_id: receiverId, content, fileUrl }, error: null };
-    const { data, error } = await supabase.from('messages').insert([{ sender_id: senderId, receiver_id: receiverId, content, fileUrl }]).select().single();
+
+  async markAsRead(senderId, receiverId) {
+    const { data, error } = await supabase
+      .from('messages')
+      .update({ is_read: true })
+      .match({ sender_id: senderId, receiver_id: receiverId, is_read: false });
     return { data, error };
   },
-  async markAsRead(messageId) {
-    if (!isConfigured()) return { error: null };
-    const { error } = await supabase.from('messages').update({ read: true }).eq('id', messageId);
-    return { error };
-  },
+
   subscribeToMessages(userId, callback) {
-    if (!isConfigured()) return { unsubscribe: () => {} };
-    const subscription = supabase.channel(`public:messages:receiver_id=eq.${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${userId}` }, payload => callback(payload.new))
+    return supabase.channel(`messages:${userId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `receiver_id=eq.${userId}`
+      }, payload => {
+        callback(payload.new);
+      })
       .subscribe();
-    return subscription;
   },
-  async uploadChatFile(file) {
-    if (!isConfigured()) return { url: 'https://demo.webloom.ai/chat/file.png', error: null };
-    const path = `${Date.now()}_${file.name}`;
-    const { url, error } = await storageService.uploadFile('chat-files', path, file);
-    return { url, error };
+
+  unsubscribeFromMessages(channel) {
+    if (channel) supabase.removeChannel(channel);
   }
 };

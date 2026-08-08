@@ -1,202 +1,188 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Search, Filter, Check, X, Calendar, Star, MoreHorizontal, Mail } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import Avatar from '@/components/ui/Avatar';
-import Badge from '@/components/ui/Badge';
-import Select from '@/components/ui/Select';
-import Input from '@/components/ui/Input';
-import { cn } from '@/utils/helpers';
+import { Search, Filter, MessageSquare, Calendar as CalendarIcon, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const mockApplicants = [
-  { id: '1', name: 'Alex Johnson', role: 'Frontend Dev', score: 95, status: 'Applied', date: '2023-10-15', avatar: '', skills: ['React', 'TS', 'Tailwind'] },
-  { id: '2', name: 'Sarah Williams', role: 'Frontend Dev', score: 88, status: 'Screening', date: '2023-10-14', avatar: '', skills: ['React', 'CSS', 'Redux'] },
-  { id: '3', name: 'Michael Chen', role: 'UX Designer', score: 92, status: 'Interview', date: '2023-10-12', avatar: '', skills: ['Figma', 'UI/UX', 'Prototyping'] },
-  { id: '4', name: 'Emily Davis', role: 'Product Manager', score: 75, status: 'Rejected', date: '2023-10-10', avatar: '', skills: ['Agile', 'Scrum', 'Jira'] },
-  { id: '5', name: 'David Wilson', role: 'Frontend Dev', score: 82, status: 'Offered', date: '2023-10-05', avatar: '', skills: ['React', 'Node.js', 'MongoDB'] },
-  { id: '6', name: 'Jessica Brown', role: 'UX Designer', score: 96, status: 'Applied', date: '2023-10-16', avatar: '', skills: ['Figma', 'User Research', 'Sketch'] },
-];
-
 export default function Applicants() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [jobFilter, setJobFilter] = useState('All');
-  const [selectedIds, setSelectedIds] = useState([]);
+  const { user } = useAuth();
+  const [applicants, setApplicants] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ status: 'All', jobId: 'All', search: '' });
 
-  const filteredApplicants = mockApplicants.filter(app => {
-    const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || app.status === statusFilter;
-    const matchesJob = jobFilter === 'All' || app.role === jobFilter;
-    return matchesSearch && matchesStatus && matchesJob;
-  });
+  useEffect(() => {
+    if (user) fetchData();
+  }, [user]);
 
-  const toggleSelect = (id) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // 1. Get all jobs for this recruiter
+      const { data: recruiterJobs, error: jobsErr } = await supabase
+        .from('jobs')
+        .select('id, title')
+        .eq('recruiter_id', user.id);
+        
+      if (jobsErr) throw jobsErr;
+      setJobs(recruiterJobs || []);
 
-  const selectAll = () => {
-    if (selectedIds.length === filteredApplicants.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredApplicants.map(a => a.id));
+      const jobIds = recruiterJobs?.map(j => j.id) || [];
+      if (jobIds.length === 0) {
+        setApplicants([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Get all applications for these jobs
+      const { data: apps, error: appsErr } = await supabase
+        .from('applications')
+        .select('*, job:jobs(title, location), candidate:profiles!candidate_id(id, full_name, headline, avatar_url, skills, location)')
+        .in('job_id', jobIds)
+        .order('created_at', { ascending: false });
+
+      if (appsErr) throw appsErr;
+      setApplicants(apps || []);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load applicants');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleBulkAction = (action) => {
-    if (selectedIds.length === 0) return;
-    toast.success(`${selectedIds.length} applicants marked as ${action}`);
-    setSelectedIds([]);
+  const updateStatus = async (appId, newStatus) => {
+    try {
+      const { error } = await supabase.from('applications').update({ status: newStatus }).eq('id', appId);
+      if (error) throw error;
+      toast.success('Status updated');
+      setApplicants(applicants.map(app => app.id === appId ? { ...app, status: newStatus } : app));
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 90) return 'text-primary border-primary/30 bg-primary/10';
-    if (score >= 80) return 'text-gold border-gold/30 bg-gold/10';
-    return 'text-text-muted border-border bg-surface-alt';
+  const filteredApplicants = applicants.filter(app => {
+    const matchesSearch = app.candidate?.full_name?.toLowerCase().includes(filters.search.toLowerCase()) || 
+                          app.job?.title?.toLowerCase().includes(filters.search.toLowerCase());
+    const matchesStatus = filters.status === 'All' || app.status === filters.status;
+    const matchesJob = filters.jobId === 'All' || app.job_id === filters.jobId;
+    return matchesSearch && matchesStatus && matchesJob;
+  });
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'Applied': return 'bg-blue-500/20 text-blue-500';
+      case 'Screening': return 'bg-purple-500/20 text-purple-500';
+      case 'Interview': return 'bg-yellow-500/20 text-yellow-500';
+      case 'Offered': return 'bg-green-500/20 text-green-500';
+      case 'Rejected': return 'bg-red-500/20 text-red-500';
+      default: return 'bg-gray-500/20 text-gray-500';
+    }
   };
 
   return (
-    <motion.div 
-      className="p-6 max-w-7xl mx-auto space-y-6"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-    >
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl serif font-bold text-text">Applicants</h1>
-          <p className="text-text-muted mt-1">Review and manage candidates for your open positions.</p>
-        </div>
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-text mb-2">Applicants</h1>
+        <p className="text-text-muted">Manage candidates across all your job postings.</p>
       </div>
 
-      {/* Filters Toolbar */}
-      <Card className="p-4 glass border-border flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div className="flex-1 w-full flex flex-col md:flex-row gap-4">
-          <Input 
-            icon={<Search size={18} />} 
-            placeholder="Search candidates..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="md:max-w-xs bg-surface"
-          />
-          <Select 
-            options={[
-              {value: 'All', label: 'All Jobs'},
-              {value: 'Frontend Dev', label: 'Frontend Dev'},
-              {value: 'UX Designer', label: 'UX Designer'},
-              {value: 'Product Manager', label: 'Product Manager'}
-            ]}
-            value={jobFilter}
-            onChange={(e) => setJobFilter(e.target.value)}
+      <div className="bg-surface border border-border rounded-xl p-4 mb-6 flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
+          <input
+            type="text"
+            placeholder="Search by name or job..."
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            className="w-full bg-dark border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text focus:border-primary outline-none"
           />
         </div>
-        
-        {/* Status Tabs */}
-        <div className="flex bg-surface-alt rounded-lg p-1 border border-border w-full md:w-auto overflow-x-auto">
-          {['All', 'Applied', 'Screening', 'Interview', 'Offered', 'Rejected'].map(status => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={cn(
-                "px-4 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap",
-                statusFilter === status ? "bg-surface text-primary shadow-sm border border-border" : "text-text-secondary hover:text-text"
-              )}
-            >
-              {status}
-            </button>
+        <select
+          value={filters.jobId}
+          onChange={(e) => setFilters({ ...filters, jobId: e.target.value })}
+          className="bg-dark border border-border rounded-lg px-4 py-2 text-sm text-text focus:border-primary outline-none"
+        >
+          <option value="All">All Jobs</option>
+          {jobs.map(job => (
+            <option key={job.id} value={job.id}>{job.title}</option>
+          ))}
+        </select>
+        <select
+          value={filters.status}
+          onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+          className="bg-dark border border-border rounded-lg px-4 py-2 text-sm text-text focus:border-primary outline-none"
+        >
+          <option value="All">All Statuses</option>
+          <option value="Applied">Applied</option>
+          <option value="Screening">Screening</option>
+          <option value="Interview">Interview</option>
+          <option value="Offered">Offered</option>
+          <option value="Rejected">Rejected</option>
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="p-8 text-center text-text-muted">Loading applicants...</div>
+      ) : filteredApplicants.length === 0 ? (
+        <div className="bg-surface border border-border rounded-xl p-12 text-center">
+          <p className="text-text-muted">No applicants found matching your filters.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {filteredApplicants.map(app => (
+            <div key={app.id} className="bg-surface border border-border rounded-xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 hover:border-primary/50 transition-colors">
+              <div className="flex items-center gap-4 flex-1">
+                <img 
+                  src={app.candidate?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(app.candidate?.full_name || 'U')}&background=random`} 
+                  alt={app.candidate?.full_name} 
+                  className="w-16 h-16 rounded-full object-cover border border-border"
+                />
+                <div>
+                  <h3 className="text-lg font-semibold text-text">{app.candidate?.full_name || 'Anonymous User'}</h3>
+                  <p className="text-sm text-text-muted">{app.candidate?.headline}</p>
+                  <div className="text-sm text-primary mt-1">Applied for: {app.job?.title}</div>
+                </div>
+              </div>
+
+              <div className="flex-1 w-full md:w-auto">
+                <div className="flex justify-between items-center mb-1 text-sm">
+                  <span className="text-text-muted">Match Score</span>
+                  <span className="font-bold text-primary">{app.match_score || 0}%</span>
+                </div>
+                <div className="w-full bg-dark rounded-full h-2">
+                  <div className="bg-primary h-2 rounded-full" style={{ width: `${app.match_score || 0}%` }}></div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                <select 
+                  value={app.status}
+                  onChange={(e) => updateStatus(app.id, e.target.value)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium outline-none appearance-none cursor-pointer border border-transparent hover:border-border transition-colors ${getStatusColor(app.status)}`}
+                >
+                  <option value="Applied">Applied</option>
+                  <option value="Screening">Screening</option>
+                  <option value="Interview">Interview</option>
+                  <option value="Offered">Offered</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+
+                <div className="flex gap-2">
+                  <button className="p-2 bg-dark border border-border rounded-lg text-text-muted hover:text-primary transition-colors" title="Message">
+                    <MessageSquare size={18} />
+                  </button>
+                  <Link to={`/recruiter/applicants/${app.id}`} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
+                    View Profile
+                  </Link>
+                </div>
+              </div>
+            </div>
           ))}
         </div>
-      </Card>
-
-      {/* Bulk Actions (visible when items selected) */}
-      {selectedIds.length > 0 && (
-        <motion.div 
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex items-center justify-between"
-        >
-          <span className="text-sm font-medium text-primary">{selectedIds.length} applicants selected</span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" className="hover:border-primary text-text hover:text-primary" onClick={() => handleBulkAction('Screening')} icon={<Check size={14}/>}>Advance</Button>
-            <Button size="sm" variant="outline" className="hover:border-gold text-text hover:text-gold" onClick={() => handleBulkAction('Rejected')} icon={<X size={14}/>}>Reject</Button>
-          </div>
-        </motion.div>
       )}
-
-      {/* Applicants List */}
-      <div className="space-y-4">
-        {/* Header Row */}
-        <div className="flex items-center px-4 py-2 text-sm font-medium text-text-muted">
-          <input type="checkbox" onChange={selectAll} checked={selectedIds.length === filteredApplicants.length && filteredApplicants.length > 0} className="mr-4 accent-primary" />
-          <div className="flex-1 grid grid-cols-12 gap-4">
-            <div className="col-span-5">Candidate</div>
-            <div className="col-span-2 text-center">AI Match</div>
-            <div className="col-span-3">Status</div>
-            <div className="col-span-2 text-right">Applied Date</div>
-          </div>
-        </div>
-
-        {filteredApplicants.length === 0 ? (
-          <Card className="p-8 glass text-center text-text-muted border-border">No applicants found matching filters.</Card>
-        ) : (
-          filteredApplicants.map((app, index) => (
-            <motion.div 
-              key={app.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-            >
-              <Card className={cn(
-                "p-4 glass border-border hover:border-primary/50 flex items-center transition-colors cursor-pointer",
-                selectedIds.includes(app.id) ? "border-primary bg-primary/5" : ""
-              )}>
-                <input 
-                  type="checkbox" 
-                  checked={selectedIds.includes(app.id)} 
-                  onChange={() => toggleSelect(app.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="mr-4 accent-primary" 
-                />
-                
-                <Link to={`/recruiter/applicants/${app.id}`} className="flex-1 grid grid-cols-12 gap-4 items-center">
-                  {/* Info */}
-                  <div className="col-span-5 flex items-center gap-3">
-                    <Avatar src={app.avatar} fallback={app.name} />
-                    <div>
-                      <h3 className="font-semibold text-text group-hover:text-primary transition-colors">{app.name}</h3>
-                      <p className="text-xs text-text-secondary">{app.role}</p>
-                      <div className="flex gap-1 mt-1">
-                        {app.skills.map(s => <Badge key={s} variant="outline" className="text-[10px] py-0 px-1.5">{s}</Badge>)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* AI Score */}
-                  <div className="col-span-2 flex justify-center">
-                    <div className={cn("w-12 h-12 rounded-full border-2 flex items-center justify-center font-bold mono", getScoreColor(app.score))}>
-                      {app.score}
-                    </div>
-                  </div>
-
-                  {/* Status */}
-                  <div className="col-span-3">
-                    <Badge variant="outline" className="text-text-secondary border-border">{app.status}</Badge>
-                  </div>
-
-                  {/* Date & Actions */}
-                  <div className="col-span-2 flex items-center justify-end gap-4 text-sm text-text-muted mono">
-                    <span>{app.date}</span>
-                    <button onClick={(e) => { e.preventDefault(); /* open menu */ }} className="p-1 hover:text-text rounded-md hover:bg-surface-alt">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </div>
-                </Link>
-              </Card>
-            </motion.div>
-          ))
-        )}
-      </div>
-    </motion.div>
+    </div>
   );
 }

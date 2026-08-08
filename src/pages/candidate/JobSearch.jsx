@@ -1,318 +1,391 @@
-import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Search, MapPin, DollarSign, Briefcase, Filter, X, Bookmark, Clock, Bell, Star, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Search, MapPin, Filter, Bookmark, Clock, DollarSign, Building, SlidersHorizontal, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
-import Input from '@/components/ui/Input';
 import Badge from '@/components/ui/Badge';
+import Input from '@/components/ui/Input';
+import Avatar from '@/components/ui/Avatar';
+import Skeleton from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
-import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-
-const ALL_JOBS = [
-  { id: 1, title: 'Senior Frontend Engineer', company: 'CyberDyne Systems', rating: 4.8, location: 'San Francisco, CA', salary: '$140k - $180k', salaryMin: 140000, salaryMax: 180000, type: 'Full-time', mode: 'Hybrid', experience: 'Senior Level', posted: '1 day ago', skills: ['React', 'TypeScript', 'Tailwind', 'Next.js'], match: 94 },
-  { id: 2, title: 'Full Stack Engineer', company: 'OmniCorp', rating: 4.5, location: 'Remote', salary: '$120k - $150k', salaryMin: 120000, salaryMax: 150000, type: 'Full-time', mode: 'Remote', experience: 'Mid Level', posted: '2 days ago', skills: ['Node.js', 'React', 'PostgreSQL', 'AWS'], match: 89 },
-  { id: 3, title: 'React Native Developer', company: 'Stark Industries', rating: 4.9, location: 'New York, NY', salary: '$130k - $160k', salaryMin: 130000, salaryMax: 160000, type: 'Contract', mode: 'On-site', experience: 'Senior Level', posted: '3 days ago', skills: ['React Native', 'Mobile', 'Redux', 'TypeScript'], match: 86 },
-  { id: 4, title: 'UI/UX Product Designer', company: 'Wayne Enterprises', rating: 4.7, location: 'Austin, TX', salary: '$110k - $140k', salaryMin: 110000, salaryMax: 140000, type: 'Full-time', mode: 'Hybrid', experience: 'Mid Level', posted: '4 days ago', skills: ['Figma', 'UI Design', 'Prototyping', 'Design Systems'], match: 82 },
-  { id: 5, title: 'Junior Frontend Developer', company: 'NexaTech', rating: 4.2, location: 'Remote', salary: '$70k - $90k', salaryMin: 70000, salaryMax: 90000, type: 'Full-time', mode: 'Remote', experience: 'Entry Level', posted: '5 days ago', skills: ['HTML', 'CSS', 'JavaScript', 'React'], match: 78 },
-  { id: 6, title: 'Lead Backend Engineer', company: 'CloudSphere', rating: 4.6, location: 'Seattle, WA', salary: '$170k - $210k', salaryMin: 170000, salaryMax: 210000, type: 'Full-time', mode: 'On-site', experience: 'Lead / Manager', posted: 'Just now', skills: ['Python', 'Go', 'Kubernetes', 'Docker'], match: 91 },
-  { id: 7, title: 'AI Engineering Specialist', company: 'DataForge', rating: 4.9, location: 'Remote', salary: '$160k - $200k', salaryMin: 160000, salaryMax: 200000, type: 'Freelance', mode: 'Remote', experience: 'Senior Level', posted: '1 day ago', skills: ['Python', 'PyTorch', 'LLMs', 'OpenAI'], match: 96 },
-  { id: 8, title: 'DevOps & Infrastructure Lead', company: 'CyberVault', rating: 4.4, location: 'Chicago, IL', salary: '$150k - $190k', salaryMin: 150000, salaryMax: 190000, type: 'Contract', mode: 'Hybrid', experience: 'Lead / Manager', posted: '6 days ago', skills: ['Terraform', 'AWS', 'CI/CD', 'Linux'], match: 84 },
-];
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function JobSearch() {
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTypes, setSelectedTypes] = useState([]);
-  const [selectedModes, setSelectedModes] = useState([]);
-  const [selectedLevels, setSelectedLevels] = useState([]);
-  const [sortBy, setSortBy] = useState('relevance');
-  const [savedJobs, setSavedJobs] = useState([]);
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [savedJobIds, setSavedJobIds] = useState(new Set());
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  const toggleType = (type) => {
-    setSelectedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+  // Filters state
+  const [filters, setFilters] = useState({
+    query: searchParams.get('q') || '',
+    location: searchParams.get('loc') || '',
+    jobType: searchParams.getAll('type') || [],
+    workMode: searchParams.getAll('mode') || [],
+    expLevel: searchParams.getAll('exp') || []
+  });
+
+  // Pagination & Sorting
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const [hasMore, setHasMore] = useState(false);
+  const [sortBy, setSortBy] = useState('latest'); // latest, salary
+
+  useEffect(() => {
+    fetchSavedJobs();
+  }, [user]);
+
+  useEffect(() => {
+    setPage(1);
+    fetchJobs(true);
+    // Update URL
+    const params = new URLSearchParams();
+    if (filters.query) params.set('q', filters.query);
+    if (filters.location) params.set('loc', filters.location);
+    filters.jobType.forEach(t => params.append('type', t));
+    filters.workMode.forEach(m => params.append('mode', m));
+    filters.expLevel.forEach(e => params.append('exp', e));
+    setSearchParams(params, { replace: true });
+  }, [filters, sortBy]); // Re-fetch when filters or sort change
+
+  const fetchSavedJobs = async () => {
+    if (!user) return;
+    const { data } = await supabase.from('saved_jobs').select('job_id').eq('user_id', user.id);
+    if (data) setSavedJobIds(new Set(data.map(s => s.job_id)));
   };
 
-  const toggleMode = (mode) => {
-    setSelectedModes(prev => prev.includes(mode) ? prev.filter(m => m !== mode) : [...prev, mode]);
-  };
+  const fetchJobs = async (reset = false) => {
+    try {
+      setLoading(true);
+      const currentPage = reset ? 1 : page;
+      const from = (currentPage - 1) * pageSize;
+      const to = from + pageSize - 1;
 
-  const toggleLevel = (level) => {
-    setSelectedLevels(prev => prev.includes(level) ? prev.filter(l => l !== level) : [...prev, level]);
-  };
+      let query = supabase
+        .from('jobs')
+        .select('*, company:companies(name, logo_url)', { count: 'exact' })
+        .eq('status', 'open');
 
-  const toggleSaveJob = (id, e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (savedJobs.includes(id)) {
-      setSavedJobs(savedJobs.filter(jId => jId !== id));
-      toast.success('Job removed from saved');
-    } else {
-      setSavedJobs([...savedJobs, id]);
-      toast.success('Job saved successfully');
+      if (filters.query) {
+        query = query.or(`title.ilike.%${filters.query}%,description.ilike.%${filters.query}%`);
+      }
+      if (filters.location) {
+        query = query.ilike('location', `%${filters.location}%`);
+      }
+      if (filters.jobType.length > 0) {
+        query = query.in('job_type', filters.jobType);
+      }
+      if (filters.workMode.length > 0) {
+        query = query.in('work_mode', filters.workMode);
+      }
+      if (filters.expLevel.length > 0) {
+        query = query.in('experience_level', filters.expLevel);
+      }
+
+      if (sortBy === 'salary') {
+        query = query.order('salary_max', { ascending: false, nullsFirst: false });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+
+      query = query.range(from, to);
+
+      const { data, count, error } = await query;
+      if (error) throw error;
+
+      if (reset) {
+        setJobs(data || []);
+        setTotalCount(count || 0);
+      } else {
+        setJobs(prev => [...prev, ...(data || [])]);
+      }
+      setHasMore(count > to + 1);
+
+    } catch (error) {
+      console.error('Fetch error:', error);
+      toast.error('Failed to load jobs');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const resetFilters = () => {
-    setSearchQuery('');
-    setSelectedTypes([]);
-    setSelectedModes([]);
-    setSelectedLevels([]);
-    setSortBy('relevance');
-    toast.success('Filters cleared');
-  };
-
-  // Filter & Sort jobs
-  const filteredJobs = useMemo(() => {
-    return ALL_JOBS.filter(job => {
-      // Search query filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesTitle = job.title.toLowerCase().includes(q);
-        const matchesCompany = job.company.toLowerCase().includes(q);
-        const matchesLocation = job.location.toLowerCase().includes(q);
-        const matchesSkill = job.skills.some(s => s.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesCompany && !matchesLocation && !matchesSkill) {
-          return false;
-        }
-      }
-
-      // Job Type filter
-      if (selectedTypes.length > 0 && !selectedTypes.includes(job.type)) {
-        return false;
-      }
-
-      // Work Mode filter
-      if (selectedModes.length > 0 && !selectedModes.includes(job.mode)) {
-        return false;
-      }
-
-      // Experience Level filter
-      if (selectedLevels.length > 0 && !selectedLevels.includes(job.experience)) {
-        return false;
-      }
-
-      return true;
-    }).sort((a, b) => {
-      if (sortBy === 'salary') return b.salaryMax - a.salaryMax;
-      if (sortBy === 'recent') return a.id - b.id;
-      return b.match - a.match; // Default: Most Relevant (highest AI match)
+  const handleFilterChange = (category, value) => {
+    setFilters(prev => {
+      const current = prev[category];
+      const updated = current.includes(value) 
+        ? current.filter(item => item !== value)
+        : [...current, value];
+      return { ...prev, [category]: updated };
     });
-  }, [searchQuery, selectedTypes, selectedModes, selectedLevels, sortBy]);
-
-  const hasActiveFilters = searchQuery || selectedTypes.length > 0 || selectedModes.length > 0 || selectedLevels.length > 0;
-
-  const pageVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { duration: 0.4, staggerChildren: 0.05 } },
   };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 15 },
-    visible: { opacity: 1, y: 0 },
+  const toggleSaveJob = async (e, jobId) => {
+    e.preventDefault();
+    if (!user) return toast.error('Please login to save jobs');
+    const isSaved = savedJobIds.has(jobId);
+    try {
+      if (isSaved) {
+        await supabase.from('saved_jobs').delete().eq('user_id', user.id).eq('job_id', jobId);
+        setSavedJobIds(prev => {
+          const next = new Set(prev);
+          next.delete(jobId);
+          return next;
+        });
+        toast.success('Removed from saved');
+      } else {
+        await supabase.from('saved_jobs').insert({ user_id: user.id, job_id: jobId });
+        setSavedJobIds(prev => new Set([...prev, jobId]));
+        toast.success('Job saved');
+      }
+    } catch (error) {
+      toast.error('Error saving job');
+    }
   };
 
   return (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" className="p-4 md:p-6 max-w-7xl mx-auto">
-      {/* Search Header */}
-      <div className="mb-8 space-y-4">
-        <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
-          <div>
-            <h1 className="text-3xl serif font-bold text-text">Find Your Next Role</h1>
-            <p className="text-text-muted mt-1">Discover opportunities tailored to your skills.</p>
-          </div>
-          <Button 
-            variant="outline" 
-            className="border-border hover:border-gold hover:text-gold bg-surface gap-2 w-fit"
-            onClick={() => toast.success('Job alert created for current search preferences!')}
-          >
-            <Bell size={16} /> Create Job Alert
-          </Button>
-        </div>
-
-        <div className="flex gap-2 w-full max-w-4xl mt-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={20} />
-            <Input 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-8 h-12 bg-surface border-border text-lg" 
-              placeholder="Search by job title, skill, company, or location..." 
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
-          <Button variant="outline" className="h-12 md:hidden border border-border hover:border-primary" onClick={() => setIsFilterOpen(!isFilterOpen)}>
-            <Filter size={20} />
-          </Button>
-        </div>
+    <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6">
+      
+      {/* Mobile Filter Toggle */}
+      <div className="md:hidden flex justify-between items-center bg-surface p-4 rounded-xl border border-border">
+        <h2 className="font-semibold text-text">Job Search</h2>
+        <Button variant="outline" size="sm" onClick={() => setShowMobileFilters(!showMobileFilters)}>
+          <SlidersHorizontal size={16} className="mr-2" /> Filters
+        </Button>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6">
-        {/* Filters Sidebar */}
-        <motion.div 
-          variants={itemVariants}
-          className={`${isFilterOpen ? 'block' : 'hidden'} md:block w-full md:w-64 space-y-6 flex-shrink-0`}
-        >
-          <Card className="bg-surface border border-border rounded-[8px] p-5 space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="serif font-bold text-text text-lg">Filters</h3>
-              {hasActiveFilters && (
-                <button 
-                  onClick={resetFilters} 
-                  className="text-xs text-primary hover:text-primary-dark font-medium flex items-center gap-1 transition-colors"
-                >
-                  <RotateCcw size={12} /> Clear all
-                </button>
-              )}
-              <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setIsFilterOpen(false)}><X size={16} /></Button>
-            </div>
-            
-            {/* Job Type Filter */}
-            <div className="space-y-3">
-              <h4 className="font-semibold text-text border-b border-border-light pb-2 text-sm">Job Type</h4>
-              {['Full-time', 'Part-time', 'Contract', 'Freelance'].map(type => (
-                <label key={type} className="flex items-center gap-2.5 text-sm text-text-secondary cursor-pointer hover:text-text transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedTypes.includes(type)}
-                    onChange={() => toggleType(type)}
-                    className="rounded border-border bg-surface-alt text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
-                  />
-                  {type}
-                </label>
-              ))}
-            </div>
+      {/* Sidebar Filters */}
+      <AnimatePresence>
+        {(showMobileFilters || window.innerWidth >= 768) && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="w-full md:w-64 shrink-0 space-y-6 md:block overflow-hidden md:overflow-visible"
+          >
+            <Card className="p-5">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-text">Filters</h3>
+                {(filters.jobType.length > 0 || filters.workMode.length > 0 || filters.expLevel.length > 0) && (
+                  <button 
+                    onClick={() => setFilters(prev => ({...prev, jobType: [], workMode: [], expLevel: []}))}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
 
-            {/* Work Mode Filter */}
-            <div className="space-y-3">
-              <h4 className="font-semibold text-text border-b border-border-light pb-2 text-sm">Work Mode</h4>
-              {['Remote', 'Hybrid', 'On-site'].map(mode => (
-                <label key={mode} className="flex items-center gap-2.5 text-sm text-text-secondary cursor-pointer hover:text-text transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedModes.includes(mode)}
-                    onChange={() => toggleMode(mode)}
-                    className="rounded border-border bg-surface-alt text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
-                  />
-                  {mode}
-                </label>
-              ))}
-            </div>
+              {/* Job Type */}
+              <div className="mb-6">
+                <h4 className="font-medium text-sm text-text-muted mb-3">Job Type</h4>
+                <div className="space-y-2">
+                  {['Full-time', 'Part-time', 'Contract', 'Internship'].map(type => (
+                    <label key={type} className="flex items-center gap-2 text-sm text-text cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-border bg-surface text-primary focus:ring-primary h-4 w-4"
+                        checked={filters.jobType.includes(type)}
+                        onChange={() => handleFilterChange('jobType', type)}
+                      />
+                      {type}
+                    </label>
+                  ))}
+                </div>
+              </div>
 
-            {/* Experience Level Filter */}
-            <div className="space-y-3">
-              <h4 className="font-semibold text-text border-b border-border-light pb-2 text-sm">Experience Level</h4>
-              {['Entry Level', 'Mid Level', 'Senior Level', 'Lead / Manager'].map(level => (
-                <label key={level} className="flex items-center gap-2.5 text-sm text-text-secondary cursor-pointer hover:text-text transition-colors">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedLevels.includes(level)}
-                    onChange={() => toggleLevel(level)}
-                    className="rounded border-border bg-surface-alt text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
-                  />
-                  {level}
-                </label>
-              ))}
-            </div>
-          </Card>
-        </motion.div>
+              {/* Work Mode */}
+              <div className="mb-6">
+                <h4 className="font-medium text-sm text-text-muted mb-3">Work Mode</h4>
+                <div className="space-y-2">
+                  {['Remote', 'Hybrid', 'On-site'].map(mode => (
+                    <label key={mode} className="flex items-center gap-2 text-sm text-text cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-border bg-surface text-primary focus:ring-primary h-4 w-4"
+                        checked={filters.workMode.includes(mode)}
+                        onChange={() => handleFilterChange('workMode', mode)}
+                      />
+                      {mode}
+                    </label>
+                  ))}
+                </div>
+              </div>
 
-        {/* Results */}
-        <div className="flex-1 space-y-4">
-          <div className="flex justify-between items-center mb-4">
-            <p className="text-text-secondary text-sm">
-              Showing <span className="text-text font-bold mono">{filteredJobs.length}</span> of <span className="text-text font-bold mono">{ALL_JOBS.length}</span> jobs
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-text-muted hidden sm:inline">Sort by:</span>
-              <select 
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="bg-surface border border-border rounded-md px-3 py-1.5 text-sm text-text focus:outline-none focus:border-primary cursor-pointer"
-              >
-                <option value="relevance">Most Relevant (AI Match)</option>
-                <option value="recent">Most Recent</option>
-                <option value="salary">Highest Salary</option>
-              </select>
-            </div>
-          </div>
-
-          {filteredJobs.length === 0 ? (
-            <Card className="p-8 bg-surface border border-border rounded-[8px] text-center">
-              <EmptyState 
-                icon={<Search size={48} className="text-text-muted" />}
-                title="No matching jobs found"
-                description="Try broadening your search query or unchecking some filters."
-              />
-              <Button onClick={resetFilters} className="mt-4 bg-primary text-white">Reset All Filters</Button>
+              {/* Experience Level */}
+              <div>
+                <h4 className="font-medium text-sm text-text-muted mb-3">Experience</h4>
+                <div className="space-y-2">
+                  {['Entry', 'Mid', 'Senior', 'Lead', 'Executive'].map(level => (
+                    <label key={level} className="flex items-center gap-2 text-sm text-text cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-border bg-surface text-primary focus:ring-primary h-4 w-4"
+                        checked={filters.expLevel.includes(level)}
+                        onChange={() => handleFilterChange('expLevel', level)}
+                      />
+                      {level}
+                    </label>
+                  ))}
+                </div>
+              </div>
             </Card>
-          ) : (
-            <div className="space-y-4">
-              {filteredJobs.map((job) => (
-                <motion.div key={job.id} variants={itemVariants}>
-                  <Card className="bg-surface p-5 border border-border hover:border-primary rounded-[8px] transition-all group">
-                    <div className="flex justify-between items-start">
-                      <div className="flex gap-4">
-                        <div className="w-12 h-12 rounded-[8px] bg-surface-alt flex items-center justify-center serif font-bold text-xl text-primary border border-border shrink-0">
-                          {job.company[0]}
-                        </div>
-                        <div>
-                          <Link to={`/candidate/jobs/${job.id}`} className="text-lg serif font-semibold text-text group-hover:text-primary transition-colors">
-                            {job.title}
-                          </Link>
-                          <div className="flex items-center gap-2 text-text-secondary text-sm mb-2">
-                            <span>{job.company}</span>
-                            <span className="flex items-center gap-1 text-gold"><Star size={12} fill="currentColor" /> {job.rating}</span>
-                          </div>
-                          
-                          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-text-secondary mb-3">
-                            <span className="flex items-center gap-1"><MapPin size={14} /> {job.location} • {job.mode}</span>
-                            <span className="flex items-center gap-1"><DollarSign size={14} /> {job.salary}</span>
-                            <span className="flex items-center gap-1"><Briefcase size={14} /> {job.type}</span>
-                            <span className="flex items-center gap-1"><Clock size={14} /> {job.posted}</span>
-                          </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                          <div className="flex flex-wrap gap-2">
-                            {job.skills.map(skill => (
-                              <Badge key={skill} variant="outline" className="text-xs bg-surface-alt border-border">{skill}</Badge>
-                            ))}
-                          </div>
+      {/* Main Content */}
+      <div className="flex-1 space-y-6">
+        
+        {/* Search Header */}
+        <Card className="p-4 flex flex-col sm:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
+            <Input 
+              placeholder="Search jobs, skills, companies..." 
+              className="pl-10"
+              value={filters.query}
+              onChange={(e) => setFilters(prev => ({...prev, query: e.target.value}))}
+            />
+          </div>
+          <div className="sm:w-1/3 relative">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
+            <Input 
+              placeholder="Location..." 
+              className="pl-10"
+              value={filters.location}
+              onChange={(e) => setFilters(prev => ({...prev, location: e.target.value}))}
+            />
+          </div>
+        </Card>
+
+        {/* Results Header */}
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-medium text-text">
+            {loading && page === 1 ? 'Searching...' : `${totalCount} Jobs Found`}
+          </h2>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-text-muted">Sort by:</span>
+            <select 
+              className="bg-transparent border-none text-text font-medium focus:ring-0 cursor-pointer"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="latest">Latest</option>
+              <option value="salary">Highest Salary</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Active Filters Tags */}
+        <div className="flex flex-wrap gap-2">
+          {filters.jobType.map(t => (
+            <Badge key={t} variant="secondary" className="flex items-center gap-1 py-1 px-3">
+              {t} <button onClick={() => handleFilterChange('jobType', t)}><X size={12} /></button>
+            </Badge>
+          ))}
+          {filters.workMode.map(m => (
+            <Badge key={m} variant="secondary" className="flex items-center gap-1 py-1 px-3">
+              {m} <button onClick={() => handleFilterChange('workMode', m)}><X size={12} /></button>
+            </Badge>
+          ))}
+          {filters.expLevel.map(e => (
+            <Badge key={e} variant="secondary" className="flex items-center gap-1 py-1 px-3">
+              {e} <button onClick={() => handleFilterChange('expLevel', e)}><X size={12} /></button>
+            </Badge>
+          ))}
+        </div>
+
+        {/* Jobs List */}
+        {loading && page === 1 ? (
+          <div className="space-y-4">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i} className="p-6">
+                <div className="flex gap-4">
+                  <Skeleton className="w-12 h-12 rounded-lg" />
+                  <div className="flex-1 space-y-3">
+                    <Skeleton className="h-6 w-1/3" />
+                    <Skeleton className="h-4 w-1/4" />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : jobs.length > 0 ? (
+          <div className="space-y-4">
+            {jobs.map((job) => (
+              <Link key={job.id} to={`/candidate/jobs/${job.id}`} className="block">
+                <Card className="p-6 hover:border-primary/50 transition-all hover:shadow-md group">
+                  <div className="flex gap-4">
+                    <Avatar 
+                      src={job.company?.logo_url} 
+                      alt={job.company?.name} 
+                      fallback={job.company?.name?.[0]} 
+                      className="w-12 h-12 rounded-lg shrink-0" 
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="text-lg font-bold text-text group-hover:text-primary transition-colors truncate">
+                            {job.title}
+                          </h3>
+                          <p className="text-text-muted mt-1 flex items-center gap-2 text-sm">
+                            <span className="font-medium text-text">{job.company?.name}</span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1"><MapPin size={14} /> {job.location || 'Remote'}</span>
+                          </p>
                         </div>
+                        <button 
+                          onClick={(e) => toggleSaveJob(e, job.id)}
+                          className={`p-2 rounded-lg transition-colors ${savedJobIds.has(job.id) ? 'text-yellow-500 bg-yellow-500/10' : 'text-text-muted hover:bg-surface-alt hover:text-text'}`}
+                        >
+                          <Bookmark size={20} fill={savedJobIds.has(job.id) ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 mt-4">
+                        {job.salary_min && (
+                          <Badge variant="outline" className="border-green-500/20 text-green-500 bg-green-500/5">
+                            ${(job.salary_min/1000).toFixed(0)}k {job.salary_max ? `- ${(job.salary_max/1000).toFixed(0)}k` : ''}
+                          </Badge>
+                        )}
+                        {job.work_mode && <Badge variant="secondary">{job.work_mode}</Badge>}
+                        {job.job_type && <Badge variant="secondary">{job.job_type}</Badge>}
+                        {job.experience_level && <Badge variant="secondary">{job.experience_level}</Badge>}
                       </div>
                       
-                      <div className="flex flex-col items-end gap-3">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={(e) => toggleSaveJob(job.id, e)}
-                          className={`rounded-full transition-colors ${savedJobs.includes(job.id) ? 'text-gold hover:text-gold-light' : 'text-text-muted hover:text-primary'}`}
-                          title={savedJobs.includes(job.id) ? 'Saved' : 'Save Job'}
-                        >
-                          <Bookmark size={20} fill={savedJobs.includes(job.id) ? 'currentColor' : 'none'} />
-                        </Button>
-                        <div className="flex flex-col items-center">
-                          <div className="text-[10px] text-text-secondary mb-1 uppercase tracking-wider">AI Match</div>
-                          <div className="relative w-10 h-10 flex items-center justify-center rounded-full border-2 border-surface-alt border-t-primary text-xs font-bold text-text mono">
-                            {job.match}%
-                          </div>
-                        </div>
+                      <div className="mt-4 text-xs text-text-muted flex items-center gap-1">
+                        <Clock size={14} /> {new Date(job.created_at).toLocaleDateString()}
                       </div>
                     </div>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </div>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+
+            {hasMore && (
+              <div className="flex justify-center pt-6">
+                <Button variant="outline" onClick={() => { setPage(p => p + 1); fetchJobs(false); }} isLoading={loading}>
+                  Load More Results
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <EmptyState 
+            icon={<Search size={48} className="text-text-muted" />}
+            title="No matching jobs found"
+            description="Try adjusting your filters or search terms to find more opportunities."
+            action={<Button variant="outline" onClick={() => setFilters({query:'', location:'', jobType:[], workMode:[], expLevel:[]})}>Clear All Filters</Button>}
+          />
+        )}
       </div>
-    </motion.div>
+    </div>
   );
 }
-

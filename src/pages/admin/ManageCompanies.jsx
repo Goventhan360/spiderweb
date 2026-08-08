@@ -1,72 +1,114 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import Card from '@/components/ui/Card';
-import Badge from '@/components/ui/Badge';
-import Button from '@/components/ui/Button';
-import { CheckCircle2, ShieldOff, Building } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '@/supabase/client';
+import { Search, BadgeCheck, XCircle, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const mockCompanies = [
-  { id: 1, name: 'TechNova', industry: 'Technology', verified: true, jobs: 45 },
-  { id: 2, name: 'Global Finance', industry: 'Finance', verified: true, jobs: 12 },
-  { id: 3, name: 'StartupXYZ', industry: 'E-commerce', verified: false, jobs: 3 },
-];
-
 export default function ManageCompanies() {
-  const [companies, setCompanies] = useState(mockCompanies);
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
-  const toggleVerify = (id) => {
-    setCompanies(companies.map(c => {
-      if (c.id === id) {
-        toast.success(c.verified ? 'Verification removed' : 'Company verified');
-        return { ...c, verified: !c.verified };
-      }
-      return c;
-    }));
+  useEffect(() => {
+    fetchCompanies();
+  }, []);
+
+  const fetchCompanies = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*, owner:profiles!owner_id(full_name)')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setCompanies(data || []);
+    } catch (err) {
+      toast.error('Failed to load companies');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const toggleVerification = async (comp) => {
+    try {
+      const { error } = await supabase.from('companies').update({ is_verified: !comp.is_verified }).eq('id', comp.id);
+      if (error) throw error;
+      setCompanies(companies.map(c => c.id === comp.id ? { ...c, is_verified: !comp.is_verified } : c));
+      toast.success(comp.is_verified ? 'Company unverified' : 'Company verified');
+    } catch (err) {
+      toast.error('Verification update failed');
+    }
+  };
+
+  const filteredCompanies = companies.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+
   return (
-    <motion.div className="p-6 max-w-7xl mx-auto space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <div>
-        <h1 className="text-3xl serif font-bold text-text">Manage Companies</h1>
-        <p className="text-text-muted mt-1">Verify and manage company profiles.</p>
-      </div>
+    <div className="p-6 max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold text-text mb-6">Manage Companies</h1>
+      
+      <div className="bg-surface border border-border rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-border">
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
+            <input
+              type="text"
+              placeholder="Search companies..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-dark border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text outline-none"
+            />
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {companies.map(company => (
-          <Card key={company.id} className="p-6 glass hover-card">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-surface border border-border-light rounded-lg flex items-center justify-center">
-                  <Building size={24} className="text-text-muted" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-text flex items-center gap-2">
-                    {company.name}
-                    {company.verified && <CheckCircle2 size={16} className="text-primary" />}
-                  </h3>
-                  <p className="text-xs text-text-secondary">{company.industry}</p>
-                </div>
-              </div>
-              <Badge variant={company.verified ? 'primary' : 'default'}>{company.verified ? 'Verified' : 'Pending'}</Badge>
-            </div>
-            
-            <div className="flex justify-between items-center text-sm mb-6">
-              <span className="text-text-muted">Active Jobs</span>
-              <span className="font-bold text-text mono">{company.jobs}</span>
-            </div>
-
-            <Button 
-              variant="outline" 
-              className="w-full"
-              onClick={() => toggleVerify(company.id)}
-              icon={company.verified ? <ShieldOff size={16}/> : <CheckCircle2 size={16}/>}
-            >
-              {company.verified ? 'Revoke Verification' : 'Verify Company'}
-            </Button>
-          </Card>
-        ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left whitespace-nowrap">
+            <thead className="bg-dark border-b border-border text-text-muted text-sm">
+              <tr>
+                <th className="p-4 font-medium">Company</th>
+                <th className="p-4 font-medium">Industry</th>
+                <th className="p-4 font-medium">Owner</th>
+                <th className="p-4 font-medium">Verified</th>
+                <th className="p-4 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan="5" className="p-8 text-center text-text-muted">Loading...</td></tr>
+              ) : filteredCompanies.map(c => (
+                <tr key={c.id} className="border-b border-border/50 hover:bg-dark/50">
+                  <td className="p-4 flex items-center gap-3">
+                    {c.logo_url ? <img src={c.logo_url} className="w-10 h-10 rounded border border-border object-cover"/> : <div className="w-10 h-10 rounded bg-dark border border-border flex items-center justify-center text-text-muted"><Building2 size={20}/></div>}
+                    <div>
+                      <p className="font-medium text-text">{c.name}</p>
+                      <p className="text-xs text-text-muted">{c.location}</p>
+                    </div>
+                  </td>
+                  <td className="p-4 text-sm text-text">{c.industry || 'N/A'}</td>
+                  <td className="p-4 text-sm text-text-muted">{c.owner?.full_name}</td>
+                  <td className="p-4">
+                    {c.is_verified ? (
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-500">
+                        <BadgeCheck size={12}/> Verified
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-500/20 text-gray-400">
+                        Unverified
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    <button 
+                      onClick={() => toggleVerification(c)} 
+                      className={`text-sm px-3 py-1 rounded border ${c.is_verified ? 'border-border text-text-muted hover:text-text' : 'border-blue-500 text-blue-500 hover:bg-blue-500/10'}`}
+                    >
+                      {c.is_verified ? 'Remove Verification' : 'Verify Company'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

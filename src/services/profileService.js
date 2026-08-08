@@ -1,74 +1,142 @@
-import { isConfigured } from '@/utils/helpers';
 import { supabase } from '@/supabase/client';
-import { storageService } from './storageService';
-
-const DEMO_PROFILE = {
-  id: 'demo-user-123',
-  full_name: 'Demo User',
-  headline: 'AI Enthusiast & Software Engineer',
-  about: 'Passionate about building AI-driven solutions.',
-  location: 'San Francisco, CA',
-  avatar_url: null,
-  resume_url: null,
-  skills: ['React', 'Node.js', 'Python', 'Machine Learning'],
-};
 
 export const profileService = {
   async getProfile(userId) {
-    if (!isConfigured()) return { data: DEMO_PROFILE, error: null };
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    return { data, error };
-  },
-
-  async updateProfile(userId, data) {
-    if (!isConfigured()) return { data: { ...DEMO_PROFILE, ...data }, error: null };
-    const { data: result, error } = await supabase.from('profiles').update(data).eq('id', userId).select().single();
-    return { data: result, error };
-  },
-
-  async uploadAvatar(userId, file) {
-    if (!isConfigured()) return { url: 'https://demo.webloom.ai/avatar.png', error: null };
-    const path = `${userId}/${Date.now()}_${file.name}`;
-    const { url, error } = await storageService.uploadFile('avatars', path, file);
-    if (!error && url) {
-      await this.updateProfile(userId, { avatar_url: url });
-    }
-    return { url, error };
-  },
-
-  async uploadResume(userId, file) {
-    if (!isConfigured()) return { url: 'https://demo.webloom.ai/resume.pdf', error: null };
-    const path = `${userId}/${Date.now()}_${file.name}`;
-    const { url, error } = await storageService.uploadFile('resumes', path, file);
-    if (!error && url) {
-      await this.updateProfile(userId, { resume_url: url });
-    }
-    return { url, error };
-  },
-
-  async getProfileWithDetails(userId) {
-    if (!isConfigured()) return { data: DEMO_PROFILE, error: null };
     const { data, error } = await supabase
       .from('profiles')
-      .select(`
-        *,
-        education (*),
-        experience (*),
-        projects (*),
-        certificates (*)
-      `)
+      .select('*')
       .eq('id', userId)
       .single();
     return { data, error };
   },
 
-  async searchProfiles(query, filters = {}) {
-    if (!isConfigured()) return { data: [DEMO_PROFILE], error: null };
-    let q = supabase.from('profiles').select('*');
-    if (query) {
-      q = q.or(`full_name.ilike.%${query}%,headline.ilike.%${query}%,about.ilike.%${query}%`);
-    }
-    const { data, error } = await q;
+  async updateProfile(userId, data) {
+    const { data: result, error } = await supabase
+      .from('profiles')
+      .upsert({ id: userId, ...data, updated_at: new Date().toISOString() })
+      .select()
+      .single();
+    return { data: result, error };
+  },
+
+  async uploadAvatar(file, userId) {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${userId}-${Math.random()}.${fileExt}`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, file);
+
+    if (uploadError) return { data: null, error: uploadError };
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(fileName);
+
+    return { data: publicUrl, error: null };
+  },
+
+  async getExperiences(profileId) {
+    const { data, error } = await supabase
+      .from('experiences')
+      .select('*')
+      .eq('profile_id', profileId)
+      .order('start_date', { ascending: false });
     return { data, error };
+  },
+
+  async addExperience(data) {
+    const { data: result, error } = await supabase
+      .from('experiences')
+      .insert(data)
+      .select()
+      .single();
+    return { data: result, error };
+  },
+
+  async updateExperience(id, data) {
+    const { data: result, error } = await supabase
+      .from('experiences')
+      .update(data)
+      .eq('id', id)
+      .select()
+      .single();
+    return { data: result, error };
+  },
+
+  async deleteExperience(id) {
+    const { error } = await supabase
+      .from('experiences')
+      .delete()
+      .eq('id', id);
+    return { error };
+  },
+
+  async getEducations(profileId) {
+    const { data, error } = await supabase
+      .from('educations')
+      .select('*')
+      .eq('profile_id', profileId)
+      .order('start_year', { ascending: false });
+    return { data, error };
+  },
+
+  async addEducation(data) {
+    const { data: result, error } = await supabase
+      .from('educations')
+      .insert(data)
+      .select()
+      .single();
+    return { data: result, error };
+  },
+
+  async updateEducation(id, data) {
+    const { data: result, error } = await supabase
+      .from('educations')
+      .update(data)
+      .eq('id', id)
+      .select()
+      .single();
+    return { data: result, error };
+  },
+
+  async deleteEducation(id) {
+    const { error } = await supabase
+      .from('educations')
+      .delete()
+      .eq('id', id);
+    return { error };
+  },
+
+  async getPublicProfile(userId) {
+    const [profile, experiences, educations] = await Promise.all([
+      this.getProfile(userId),
+      this.getExperiences(userId),
+      this.getEducations(userId)
+    ]);
+    
+    if (profile.error) return { data: null, error: profile.error };
+    
+    return {
+      data: {
+        ...profile.data,
+        experiences: experiences.data || [],
+        educations: educations.data || []
+      },
+      error: null
+    };
+  },
+
+  calcProfileScore(profile) {
+    let score = 0;
+    if (profile.full_name) score += 20;
+    if (profile.headline) score += 10;
+    if (profile.bio) score += 10;
+    if (profile.avatar_url) score += 10;
+    if (profile.skills && profile.skills.length > 0) score += 20;
+    if (profile.location) score += 10;
+    if (profile.phone) score += 10;
+    if (profile.linkedin_url || profile.github_url || profile.website) score += 10;
+    return Math.min(score, 100);
   }
 };

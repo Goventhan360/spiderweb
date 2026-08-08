@@ -1,119 +1,200 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Search, Send, Paperclip, MoreVertical, Circle } from 'lucide-react';
-import Card from '@/components/ui/Card';
-import Avatar from '@/components/ui/Avatar';
-import Input from '@/components/ui/Input';
-import Button from '@/components/ui/Button';
-
-const mockContacts = [
-  { id: 1, name: 'Alex Johnson', role: 'Senior React Dev', lastMsg: 'I have attached my portfolio.', time: '10:30 AM', unread: true },
-  { id: 2, name: 'Sarah Williams', role: 'UX Designer', lastMsg: 'Thanks for the interview!', time: 'Yesterday', unread: false },
-  { id: 3, name: 'Michael Chen', role: 'Full Stack Engineer', lastMsg: 'When can I expect to hear back?', time: 'Oct 22', unread: false },
-];
+import React, { useEffect, useState, useRef } from 'react';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Send, Image as ImageIcon, UserCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function RecruiterMessages() {
-  const [activeContact, setActiveContact] = useState(mockContacts[0]);
-  const [message, setMessage] = useState('');
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState([]);
+  const [activeCandidate, setActiveCandidate] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const messagesEndRef = useRef(null);
+  
+  useEffect(() => {
+    if (user) {
+      fetchConversations();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (activeCandidate && user) {
+      fetchMessages(activeCandidate.id);
+      
+      const channel = supabase.channel('realtime:messages')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `receiver_id=eq.${user.id}`
+        }, (payload) => {
+          if (payload.new.sender_id === activeCandidate.id) {
+            setMessages(prev => [...prev, payload.new]);
+            scrollToBottom();
+          }
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [activeCandidate, user]);
+
+  const fetchConversations = async () => {
+    // Basic mock logic - normally you'd query distinct sender/receivers where you are involved
+    // and join with profiles. Here we just fetch people who applied to your jobs.
+    try {
+      const { data: jobs } = await supabase.from('jobs').select('id').eq('recruiter_id', user.id);
+      const jobIds = jobs?.map(j => j.id) || [];
+      if (!jobIds.length) return;
+
+      const { data: apps } = await supabase
+        .from('applications')
+        .select('candidate:profiles!candidate_id(id, full_name, avatar_url, headline)')
+        .in('job_id', jobIds);
+      
+      if (apps) {
+        // Unique candidates
+        const unique = [];
+        const seen = new Set();
+        apps.forEach(app => {
+          if (app.candidate && !seen.has(app.candidate.id)) {
+            seen.add(app.candidate.id);
+            unique.push(app.candidate);
+          }
+        });
+        setConversations(unique);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchMessages = async (otherUserId) => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setMessages(data || []);
+      scrollToBottom();
+    } catch (err) {
+      toast.error('Failed to load messages');
+    }
+  };
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeCandidate) return;
+
+    const msg = {
+      sender_id: user.id,
+      receiver_id: activeCandidate.id,
+      content: newMessage.trim()
+    };
+
+    try {
+      // Optimistic update
+      const tempMsg = { ...msg, id: Date.now().toString(), created_at: new Date().toISOString() };
+      setMessages(prev => [...prev, tempMsg]);
+      setNewMessage('');
+      scrollToBottom();
+
+      const { error } = await supabase.from('messages').insert([msg]);
+      if (error) throw error;
+      
+    } catch (err) {
+      toast.error('Failed to send message');
+    }
+  };
+
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
 
   return (
-    <motion.div 
-      className="p-4 md:p-6 h-[calc(100vh-4rem)] max-w-7xl mx-auto"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-    >
-      <Card className="glass border-border h-full flex overflow-hidden">
-        {/* Contacts Sidebar */}
-        <div className="w-full md:w-80 border-r border-border flex flex-col bg-surface">
-          <div className="p-4 border-b border-border">
-            <h2 className="text-lg serif font-bold text-text mb-4">Messages</h2>
-            <Input icon={<Search size={16}/>} placeholder="Search messages..." className="bg-surface-alt" />
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {mockContacts.map(contact => (
-              <div 
-                key={contact.id} 
-                onClick={() => setActiveContact(contact)}
-                className={`p-4 flex items-start gap-3 cursor-pointer transition-colors border-b border-border/50 ${
-                  activeContact.id === contact.id ? 'bg-primary/5 border-l-4 border-l-primary' : 'hover:bg-surface-alt'
-                }`}
-              >
-                <div className="relative">
-                  <Avatar fallback={contact.name} />
-                  {contact.unread && <span className="absolute bottom-0 right-0 w-3 h-3 bg-primary rounded-full border-2 border-surface"></span>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <h4 className="font-semibold text-text truncate text-sm">{contact.name}</h4>
-                    <span className="text-xs text-text-muted mono">{contact.time}</span>
-                  </div>
-                  <p className="text-xs text-primary mb-1">{contact.role}</p>
-                  <p className="text-xs text-text-secondary truncate">{contact.lastMsg}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+    <div className="flex h-[calc(100vh-80px)] bg-dark border-t border-border">
+      {/* Sidebar */}
+      <div className="w-1/3 border-r border-border bg-surface flex flex-col">
+        <div className="p-4 border-b border-border">
+          <h2 className="text-xl font-bold text-text">Messages</h2>
         </div>
-
-        {/* Chat Area */}
-        <div className="hidden md:flex flex-col flex-1 bg-bg/50">
-          {/* Chat Header */}
-          <div className="p-4 border-b border-border flex items-center justify-between bg-surface">
-            <div className="flex items-center gap-3">
-              <Avatar fallback={activeContact.name} />
+        <div className="flex-1 overflow-y-auto">
+          {conversations.map(c => (
+            <div 
+              key={c.id} 
+              onClick={() => setActiveCandidate(c)}
+              className={`flex items-center gap-3 p-4 border-b border-border cursor-pointer transition-colors ${activeCandidate?.id === c.id ? 'bg-primary/10 border-l-2 border-l-primary' : 'hover:bg-dark'}`}
+            >
+              <img src={c.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.full_name)}&background=random`} className="w-12 h-12 rounded-full border border-border" alt={c.full_name} />
               <div>
-                <h3 className="font-bold text-text">{activeContact.name}</h3>
-                <p className="text-xs text-text-muted">{activeContact.role}</p>
+                <p className="font-medium text-text">{c.full_name}</p>
+                <p className="text-xs text-text-muted truncate w-40">{c.headline}</p>
               </div>
             </div>
-            <Button variant="ghost" size="sm" icon={<MoreVertical size={18}/>} />
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="flex flex-col gap-1 items-start">
-              <div className="bg-surface-alt p-3 rounded-2xl rounded-tl-none border border-border max-w-[80%]">
-                <p className="text-sm text-text">Hello, I'm excited about the Senior React role!</p>
-              </div>
-              <span className="text-[10px] text-text-muted ml-1 mono">10:00 AM</span>
-            </div>
-            <div className="flex flex-col gap-1 items-end">
-              <div className="bg-primary/10 text-text p-3 rounded-2xl rounded-tr-none border border-primary/20 max-w-[80%]">
-                <p className="text-sm">Great to connect with you, Alex! Could you send your portfolio?</p>
-              </div>
-              <span className="text-[10px] text-text-muted mr-1 mono">10:15 AM</span>
-            </div>
-            <div className="flex flex-col gap-1 items-start">
-              <div className="bg-surface-alt p-3 rounded-2xl rounded-tl-none border border-border max-w-[80%]">
-                <p className="text-sm text-text">Absolutely. I have attached my portfolio.</p>
-              </div>
-              <span className="text-[10px] text-text-muted ml-1 mono">10:30 AM</span>
-            </div>
-          </div>
-
-          {/* Input */}
-          <div className="p-4 border-t border-border bg-surface">
-            <div className="flex items-center gap-2">
-              <button className="p-2 text-text-muted hover:text-text transition-colors">
-                <Paperclip size={20} />
-              </button>
-              <div className="flex-1">
-                <Input 
-                  placeholder="Type your message..." 
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  className="bg-surface-alt border-border"
-                />
-              </div>
-              <Button 
-                variant="primary" 
-                icon={<Send size={18} />} 
-                className="px-3 md:px-4"
-              />
-            </div>
-          </div>
+          ))}
+          {conversations.length === 0 && (
+            <p className="p-8 text-center text-text-muted">No candidates available to message.</p>
+          )}
         </div>
-      </Card>
-    </motion.div>
+      </div>
+
+      {/* Chat Area */}
+      <div className="flex-1 flex flex-col">
+        {activeCandidate ? (
+          <>
+            <div className="p-4 border-b border-border bg-surface flex items-center gap-3">
+              <img src={activeCandidate.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeCandidate.full_name)}&background=random`} className="w-10 h-10 rounded-full" alt="" />
+              <h3 className="font-semibold text-text">{activeCandidate.full_name}</h3>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.map(m => {
+                const isMine = m.sender_id === user.id;
+                return (
+                  <div key={m.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[70%] rounded-xl p-3 ${isMine ? 'bg-primary text-white rounded-br-sm' : 'bg-surface border border-border text-text rounded-bl-sm'}`}>
+                      <p className="text-sm">{m.content}</p>
+                      <span className={`text-[10px] mt-1 block ${isMine ? 'text-white/70' : 'text-text-muted'}`}>
+                        {new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <form onSubmit={sendMessage} className="p-4 border-t border-border bg-surface flex gap-2">
+              <button type="button" className="p-2 text-text-muted hover:text-primary transition-colors">
+                <ImageIcon size={20} />
+              </button>
+              <input 
+                type="text" 
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                placeholder="Type your message..." 
+                className="flex-1 bg-dark border border-border rounded-lg px-4 py-2 text-sm text-text focus:border-primary outline-none"
+              />
+              <button type="submit" disabled={!newMessage.trim()} className="bg-primary text-white p-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
+                <Send size={20} />
+              </button>
+            </form>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-text-muted">
+            <UserCircle size={64} className="mb-4 opacity-50" />
+            <p>Select a candidate to start messaging</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,54 +1,85 @@
-import { isConfigured } from '@/utils/helpers';
 import { supabase } from '@/supabase/client';
-import { storageService } from './storageService';
-
-const DEMO_COMPANIES = [
-  { id: '1', name: 'CyberDyne Systems', slug: 'cyberdyne-systems', industry: 'AI', location: 'San Francisco, CA', description: 'Advanced AI systems.' }
-];
 
 export const companyService = {
-  async getCompanies(filters = {}) {
-    if (!isConfigured()) return { data: DEMO_COMPANIES, error: null };
-    const { data, error } = await supabase.from('companies').select('*');
-    return { data, error };
-  },
-  async getCompanyById(id) {
-    if (!isConfigured()) return { data: DEMO_COMPANIES.find(c => c.id === id) || DEMO_COMPANIES[0], error: null };
-    const { data, error } = await supabase.from('companies').select('*').eq('id', id).single();
-    return { data, error };
-  },
-  async getCompanyBySlug(slug) {
-    if (!isConfigured()) return { data: DEMO_COMPANIES.find(c => c.slug === slug) || DEMO_COMPANIES[0], error: null };
-    const { data, error } = await supabase.from('companies').select('*').eq('slug', slug).single();
-    return { data, error };
-  },
-  async createCompany(data) {
-    if (!isConfigured()) return { data: { ...data, id: Date.now().toString() }, error: null };
-    const { data: result, error } = await supabase.from('companies').insert([data]).select().single();
-    return { data: result, error };
-  },
-  async updateCompany(id, data) {
-    if (!isConfigured()) return { data, error: null };
-    const { data: result, error } = await supabase.from('companies').update(data).eq('id', id).select().single();
-    return { data: result, error };
-  },
-  async deleteCompany(id) {
-    if (!isConfigured()) return { error: null };
-    const { error } = await supabase.from('companies').delete().eq('id', id);
-    return { error };
-  },
-  async uploadCompanyLogo(companyId, file) {
-    if (!isConfigured()) return { url: 'https://demo.webloom.ai/logo.png', error: null };
-    const path = `${companyId}/${Date.now()}_${file.name}`;
-    const { url, error } = await storageService.uploadFile('company-logos', path, file);
-    if (!error && url) {
-      await this.updateCompany(companyId, { logo_url: url });
-    }
-    return { url, error };
-  },
   async getCompanyByOwner(ownerId) {
-    if (!isConfigured()) return { data: DEMO_COMPANIES[0], error: null };
-    const { data, error } = await supabase.from('companies').select('*').eq('owner_id', ownerId).single();
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('owner_id', ownerId)
+      .single();
     return { data, error };
+  },
+
+  async getCompanyById(id) {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*, owner:profiles(*)')
+      .eq('id', id)
+      .single();
+    return { data, error };
+  },
+
+  async createCompany(data) {
+    const { data: result, error } = await supabase
+      .from('companies')
+      .insert(data)
+      .select()
+      .single();
+    return { data: result, error };
+  },
+
+  async updateCompany(id, data) {
+    const { data: result, error } = await supabase
+      .from('companies')
+      .update(data)
+      .eq('id', id)
+      .select()
+      .single();
+    return { data: result, error };
+  },
+
+  async getAllCompanies(filters = {}) {
+    let query = supabase.from('companies').select('*', { count: 'exact' });
+    
+    if (filters.search) query = query.ilike('name', `%${filters.search}%`);
+    if (filters.industry) query = query.eq('industry', filters.industry);
+    
+    const page = filters.page || 1;
+    const limit = filters.limit || 20;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    query = query.order('created_at', { ascending: false }).range(from, to);
+
+    const { data, error, count } = await query;
+    return { data, count, error };
+  },
+
+  async getCompanyJobs(companyId) {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+    return { data, error };
+  },
+
+  async uploadLogo(file, companyId) {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${companyId}-${Math.random()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('company-logos')
+      .upload(filePath, file);
+
+    if (uploadError) return { data: null, error: uploadError };
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('company-logos')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrl, error: null };
   }
 };

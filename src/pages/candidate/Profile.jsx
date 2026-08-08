@@ -1,409 +1,466 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { User, Book, Briefcase, Code, Award, FileText, Upload, Save, Calendar, Plus, ExternalLink, Github, Medal, Edit2, Trash2, CheckCircle } from 'lucide-react';
+import { supabase } from '@/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { 
+  User, Briefcase, GraduationCap, MapPin, Phone, Globe, Github, Linkedin, 
+  Plus, X, Edit2, Check, Upload, Trash2 
+} from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import Input from '@/components/ui/Input';
-import ProgressBar from '@/components/ui/ProgressBar';
+import Avatar from '@/components/ui/Avatar';
 import Skeleton from '@/components/ui/Skeleton';
-import Badge from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
 
 export default function Profile() {
-  const { profile, updateProfile, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState('personal');
+  const { user, profile: authProfile, refreshProfile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  // Profile State
+  const [formData, setFormData] = useState({
+    full_name: '',
+    headline: '',
+    bio: '',
+    location: '',
+    phone: '',
+    website: '',
+    github_url: '',
+    linkedin_url: '',
+    skills: [],
+    is_available: true
+  });
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  // Form State
-  const [fullName, setFullName] = useState('');
-  const [headline, setHeadline] = useState('');
-  const [bio, setBio] = useState('');
-  const [location, setLocation] = useState('');
-  const [phone, setPhone] = useState('');
-  const [linkedin, setLinkedin] = useState('');
-  const [github, setGithub] = useState('');
-  const [newSkill, setNewSkill] = useState('');
+  // Lists state
+  const [experiences, setExperiences] = useState([]);
+  const [educations, setEducations] = useState([]);
 
-  // Experience, Education, Skills, Projects arrays
-  const [skills, setSkills] = useState(['React', 'JavaScript', 'TypeScript', 'Node.js', 'Tailwind CSS', 'GraphQL']);
-  const [experiences, setExperiences] = useState([
-    { id: 1, title: 'Senior Frontend Engineer', company: 'OmniCorp', period: 'Jan 2024 - Present', desc: 'Lead frontend migration from Angular to React/Next.js. Implemented design system reducing UI bugs by 40%.' },
-    { id: 2, title: 'UI Developer', company: 'CyberDyne Systems', period: 'Jun 2022 - Dec 2023', desc: 'Built responsive web dashboards using React, Redux Toolkit, and Tailwind CSS.' }
-  ]);
-  const [educationList, setEducationList] = useState([
-    { id: 1, degree: 'B.S. in Computer Science', school: 'University of California, Berkeley', period: '2018 - 2022', grade: '3.8 GPA' }
-  ]);
-  const [projects, setProjects] = useState([
-    { id: 1, name: 'Webloom Career Network', desc: 'AI-powered job matching and career coaching platform.', tags: ['React', 'Tailwind', 'Supabase'], url: 'https://github.com' }
-  ]);
+  // UI state
+  const [skillInput, setSkillInput] = useState('');
+  const [editingExp, setEditingExp] = useState(null);
+  const [editingEdu, setEditingEdu] = useState(null);
 
   useEffect(() => {
-    if (profile) {
-      setFullName(profile.full_name || 'Alex Morgan');
-      setHeadline(profile.headline || 'Senior React Developer');
-      setBio(profile.bio || 'Passionate frontend developer with 5+ years of experience building scalable web applications.');
-      setLocation(profile.location || 'San Francisco, CA');
-      setPhone(profile.phone || '+1 (555) 123-4567');
-      setLinkedin(profile.linkedin_url || 'https://linkedin.com/in/alexmorgan');
-      setGithub(profile.github_url || 'https://github.com/alexm');
-      if (profile.skills && profile.skills.length > 0) {
-        setSkills(profile.skills);
-      }
+    if (user) {
+      fetchProfileData();
     }
-  }, [profile]);
+  }, [user]);
 
-  const handleSavePersonal = async (e) => {
-    e.preventDefault();
-    const { error } = await updateProfile({
-      full_name: fullName,
-      headline,
-      bio,
-      location,
-      phone,
-      linkedin_url: linkedin,
-      github_url: github,
-      skills,
-    });
+  const fetchProfileData = async () => {
+    try {
+      setLoading(true);
+      // Main profile
+      const { data: profData, error: profErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      if (profErr) throw profErr;
 
-    if (error) {
-      toast.error('Failed to save profile changes');
-    } else {
-      toast.success('Profile updated successfully!');
+      setFormData({
+        full_name: profData.full_name || '',
+        headline: profData.headline || '',
+        bio: profData.bio || '',
+        location: profData.location || '',
+        phone: profData.phone || '',
+        website: profData.website || '',
+        github_url: profData.github_url || '',
+        linkedin_url: profData.linkedin_url || '',
+        skills: profData.skills || [],
+        is_available: profData.is_available ?? true
+      });
+      setAvatarUrl(profData.avatar_url || '');
+
+      // Fetch experiences
+      const { data: expData } = await supabase.from('experiences').select('*').eq('profile_id', user.id).order('start_date', { ascending: false });
+      if (expData) setExperiences(expData);
+
+      // Fetch education
+      const { data: eduData } = await supabase.from('educations').select('*').eq('profile_id', user.id).order('start_year', { ascending: false });
+      if (eduData) setEducations(eduData);
+
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      toast.error('Failed to load profile');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleAddSkill = () => {
-    if (!newSkill.trim()) return;
-    if (skills.includes(newSkill.trim())) {
-      toast.error('Skill already exists');
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      setSaving(true);
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          ...formData,
+          // basic scoring logic based on filled fields
+          profile_score: calculateProfileScore(formData)
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      toast.success('Profile updated successfully');
+      refreshProfile(); // update context
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast.error('Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const calculateProfileScore = (data) => {
+    let score = 0;
+    if (data.full_name) score += 10;
+    if (data.headline) score += 10;
+    if (data.bio) score += 20;
+    if (data.location) score += 10;
+    if (data.skills?.length > 0) score += 20;
+    if (avatarUrl) score += 10;
+    if (experiences.length > 0) score += 10;
+    if (educations.length > 0) score += 10;
+    return Math.min(score, 100);
+  };
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      setUploadingAvatar(true);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+      
+      setAvatarUrl(publicUrl);
+      refreshProfile();
+      toast.success('Avatar updated');
+    } catch (error) {
+      toast.error('Error uploading avatar');
+      console.error(error);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  // Skills
+  const addSkill = (e) => {
+    e.preventDefault();
+    if (!skillInput.trim()) return;
+    if (formData.skills.includes(skillInput.trim())) {
+      toast.error('Skill already added');
       return;
     }
-    const updated = [...skills, newSkill.trim()];
-    setSkills(updated);
-    setNewSkill('');
-    updateProfile({ skills: updated });
-    toast.success(`Added skill: ${newSkill}`);
+    setFormData(prev => ({ ...prev, skills: [...prev.skills, skillInput.trim()] }));
+    setSkillInput('');
+  };
+  const removeSkill = (skill) => {
+    setFormData(prev => ({ ...prev, skills: prev.skills.filter(s => s !== skill) }));
   };
 
-  const handleRemoveSkill = (skillToRemove) => {
-    const updated = skills.filter(s => s !== skillToRemove);
-    setSkills(updated);
-    updateProfile({ skills: updated });
-    toast.success(`Removed ${skillToRemove}`);
+  // Experience Handlers
+  const saveExperience = async (exp) => {
+    try {
+      if (exp.id) {
+        await supabase.from('experiences').update(exp).eq('id', exp.id);
+      } else {
+        await supabase.from('experiences').insert({ ...exp, profile_id: user.id });
+      }
+      fetchProfileData();
+      setEditingExp(null);
+      toast.success('Experience saved');
+    } catch (error) {
+      toast.error('Failed to save experience');
+    }
+  };
+  const deleteExperience = async (id) => {
+    if (!window.confirm('Delete this experience?')) return;
+    try {
+      await supabase.from('experiences').delete().eq('id', id);
+      setExperiences(prev => prev.filter(e => e.id !== id));
+      toast.success('Deleted');
+    } catch (error) {
+      toast.error('Failed to delete');
+    }
   };
 
-  const pageVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+  // Education Handlers
+  const saveEducation = async (edu) => {
+    try {
+      if (edu.id) {
+        await supabase.from('educations').update(edu).eq('id', edu.id);
+      } else {
+        await supabase.from('educations').insert({ ...edu, profile_id: user.id });
+      }
+      fetchProfileData();
+      setEditingEdu(null);
+      toast.success('Education saved');
+    } catch (error) {
+      toast.error('Failed to save education');
+    }
+  };
+  const deleteEducation = async (id) => {
+    if (!window.confirm('Delete this education?')) return;
+    try {
+      await supabase.from('educations').delete().eq('id', id);
+      setEducations(prev => prev.filter(e => e.id !== id));
+      toast.success('Deleted');
+    } catch (error) {
+      toast.error('Failed to delete');
+    }
   };
 
-  if (loading) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Skeleton className="h-48 w-full rounded-2xl" />
+        <Skeleton className="h-96 w-full rounded-2xl" />
+      </div>
+    );
+  }
+
+  const profileScore = calculateProfileScore(formData);
 
   return (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col md:flex-row gap-6 items-start">
-        
-        {/* Left Sidebar Card */}
-        <div className="w-full md:w-1/3 lg:w-1/4 space-y-6 shrink-0">
-          <Card className="bg-surface border border-border rounded-[8px] p-6 flex flex-col items-center text-center">
+    <div className="max-w-4xl mx-auto space-y-6 pb-20">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-text">My Profile</h1>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+            <span className={formData.is_available ? "text-green-500" : "text-text-muted"}>
+              {formData.is_available ? 'Open to Work' : 'Not Available'}
+            </span>
+            <input 
+              type="checkbox" 
+              name="is_available" 
+              checked={formData.is_available} 
+              onChange={handleInputChange}
+              className="sr-only" 
+            />
+            <div className={`w-10 h-5 rounded-full transition-colors ${formData.is_available ? 'bg-green-500' : 'bg-surface-alt'} relative`}>
+              <div className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${formData.is_available ? 'translate-x-5' : ''}`}></div>
+            </div>
+          </label>
+          <Button onClick={handleSaveProfile} isLoading={saving} leftIcon={<Check size={18} />}>
+            Save Profile
+          </Button>
+        </div>
+      </div>
+
+      {/* Profile Completeness */}
+      <Card className="p-6 bg-gradient-to-r from-surface to-surface-alt">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-semibold text-text">Profile Completeness</span>
+          <span className="font-bold text-primary">{profileScore}%</span>
+        </div>
+        <div className="w-full bg-surface rounded-full h-3 border border-border">
+          <div className="bg-primary h-full rounded-full transition-all duration-500" style={{ width: `${profileScore}%` }}></div>
+        </div>
+        {profileScore < 100 && (
+          <p className="text-sm text-text-muted mt-3">Complete your profile to stand out to recruiters.</p>
+        )}
+      </Card>
+
+      {/* Basic Info */}
+      <Card className="p-6">
+        <div className="flex flex-col md:flex-row gap-8 mb-8 items-start">
+          <div className="flex flex-col items-center gap-4">
             <div className="relative group">
-              <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-surface-alt relative bg-primary/20 flex items-center justify-center text-primary text-3xl font-bold serif border-border">
-                {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <span>{fullName ? fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'AM'}</span>
-                )}
-                <div 
-                  onClick={() => toast.success('Avatar uploaded successfully!')}
-                  className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity text-xs"
-                >
-                  <Upload size={20} className="mb-1" /> Change
+              <Avatar src={avatarUrl} alt="Profile" fallback={<User size={40} />} className="w-32 h-32 rounded-2xl" />
+              <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl cursor-pointer">
+                {uploadingAvatar ? <Skeleton className="w-8 h-8 rounded-full" /> : <Upload size={24} />}
+                <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={uploadingAvatar} />
+              </label>
+            </div>
+            <p className="text-xs text-text-muted text-center max-w-[120px]">Allowed *.jpeg, *.jpg, *.png, *.gif</p>
+          </div>
+
+          <div className="flex-1 space-y-4 w-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="Full Name" name="full_name" value={formData.full_name} onChange={handleInputChange} />
+              <Input label="Headline" name="headline" value={formData.headline} onChange={handleInputChange} placeholder="e.g. Senior Frontend Engineer" />
+              <Input label="Location" name="location" value={formData.location} onChange={handleInputChange} icon={<MapPin size={16} />} />
+              <Input label="Phone" name="phone" value={formData.phone} onChange={handleInputChange} icon={<Phone size={16} />} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text mb-1">About Me (Bio)</label>
+              <textarea 
+                name="bio"
+                value={formData.bio}
+                onChange={handleInputChange}
+                rows={4}
+                className="w-full p-3 rounded-lg border border-border bg-surface text-text focus:ring-2 focus:ring-primary outline-none"
+                placeholder="Write a brief introduction about yourself..."
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Links */}
+        <div className="border-t border-border pt-6 mt-6">
+          <h3 className="text-lg font-semibold text-text mb-4">Social & Links</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Input name="website" value={formData.website} onChange={handleInputChange} placeholder="Personal Website" icon={<Globe size={16} />} />
+            <Input name="github_url" value={formData.github_url} onChange={handleInputChange} placeholder="GitHub URL" icon={<Github size={16} />} />
+            <Input name="linkedin_url" value={formData.linkedin_url} onChange={handleInputChange} placeholder="LinkedIn URL" icon={<Linkedin size={16} />} />
+          </div>
+        </div>
+      </Card>
+
+      {/* Skills */}
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold text-text mb-4">Skills</h3>
+        <form onSubmit={addSkill} className="flex gap-2 mb-4">
+          <Input 
+            value={skillInput} 
+            onChange={(e) => setSkillInput(e.target.value)} 
+            placeholder="Add a skill (e.g. React, Python)" 
+            className="flex-1"
+          />
+          <Button type="submit" variant="secondary">Add</Button>
+        </form>
+        <div className="flex flex-wrap gap-2">
+          {formData.skills.map((skill, idx) => (
+            <div key={idx} className="flex items-center gap-1 bg-surface-alt border border-border rounded-full px-3 py-1 text-sm text-text">
+              {skill}
+              <button onClick={() => removeSkill(skill)} className="text-text-muted hover:text-red-500 ml-1"><X size={14} /></button>
+            </div>
+          ))}
+          {formData.skills.length === 0 && <span className="text-text-muted text-sm">No skills added yet.</span>}
+        </div>
+      </Card>
+
+      {/* Experience */}
+      <Card className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-semibold text-text flex items-center gap-2"><Briefcase size={20} className="text-primary"/> Experience</h3>
+          <Button variant="outline" size="sm" onClick={() => setEditingExp({})} leftIcon={<Plus size={16} />}>Add</Button>
+        </div>
+
+        {editingExp && (
+          <div className="bg-surface-alt p-4 rounded-xl border border-border mb-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="Company" value={editingExp.company || ''} onChange={(e) => setEditingExp({...editingExp, company: e.target.value})} />
+              <Input label="Title" value={editingExp.title || ''} onChange={(e) => setEditingExp({...editingExp, title: e.target.value})} />
+              <Input type="date" label="Start Date" value={editingExp.start_date || ''} onChange={(e) => setEditingExp({...editingExp, start_date: e.target.value})} />
+              <div>
+                <Input type="date" label="End Date" value={editingExp.end_date || ''} onChange={(e) => setEditingExp({...editingExp, end_date: e.target.value})} disabled={editingExp.is_current} />
+                <label className="flex items-center gap-2 mt-2 text-sm text-text cursor-pointer">
+                  <input type="checkbox" checked={editingExp.is_current || false} onChange={(e) => setEditingExp({...editingExp, is_current: e.target.checked, end_date: e.target.checked ? null : editingExp.end_date})} className="rounded bg-surface border-border text-primary" />
+                  I currently work here
+                </label>
+              </div>
+            </div>
+            <textarea 
+              placeholder="Description" 
+              className="w-full p-3 rounded-lg border border-border bg-surface text-text outline-none" rows={3}
+              value={editingExp.description || ''} onChange={(e) => setEditingExp({...editingExp, description: e.target.value})} 
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setEditingExp(null)}>Cancel</Button>
+              <Button size="sm" onClick={() => saveExperience(editingExp)}>Save</Button>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-6">
+          {experiences.length === 0 && !editingExp && <p className="text-text-muted text-sm text-center py-4">Add your work experience</p>}
+          {experiences.map(exp => (
+            <div key={exp.id} className="relative group pl-6 border-l-2 border-surface-alt pb-6 last:pb-0">
+              <div className="absolute w-3 h-3 bg-primary rounded-full -left-[7px] top-2"></div>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className="font-bold text-text text-lg">{exp.title}</h4>
+                  <p className="text-primary font-medium">{exp.company}</p>
+                  <p className="text-sm text-text-muted mt-1">
+                    {exp.start_date ? new Date(exp.start_date).toLocaleDateString(undefined, {month:'short', year:'numeric'}) : ''} - 
+                    {exp.is_current ? ' Present' : (exp.end_date ? new Date(exp.end_date).toLocaleDateString(undefined, {month:'short', year:'numeric'}) : '')}
+                  </p>
+                  {exp.description && <p className="mt-3 text-text-muted whitespace-pre-wrap">{exp.description}</p>}
+                </div>
+                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => setEditingExp(exp)} className="p-2 text-text-muted hover:text-primary"><Edit2 size={16} /></button>
+                  <button onClick={() => deleteExperience(exp.id)} className="p-2 text-text-muted hover:text-red-500"><Trash2 size={16} /></button>
                 </div>
               </div>
             </div>
-            <h2 className="mt-4 text-xl serif font-bold text-text">{fullName || 'Alex Morgan'}</h2>
-            <p className="text-text-secondary text-xs mt-1 mb-4">{headline}</p>
-            <div className="w-full">
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-text-secondary">Profile Strength</span>
-                <span className="text-primary font-bold mono">85%</span>
+          ))}
+        </div>
+      </Card>
+
+      {/* Education */}
+      <Card className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-semibold text-text flex items-center gap-2"><GraduationCap size={20} className="text-primary"/> Education</h3>
+          <Button variant="outline" size="sm" onClick={() => setEditingEdu({})} leftIcon={<Plus size={16} />}>Add</Button>
+        </div>
+
+        {editingEdu && (
+          <div className="bg-surface-alt p-4 rounded-xl border border-border mb-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="Institution" value={editingEdu.institution || ''} onChange={(e) => setEditingEdu({...editingEdu, institution: e.target.value})} />
+              <Input label="Degree" value={editingEdu.degree || ''} onChange={(e) => setEditingEdu({...editingEdu, degree: e.target.value})} placeholder="e.g. Bachelor of Science" />
+              <Input label="Field of Study" value={editingEdu.field || ''} onChange={(e) => setEditingEdu({...editingEdu, field: e.target.value})} />
+              <div className="flex gap-2">
+                <Input label="Start Year" type="number" className="w-1/2" value={editingEdu.start_year || ''} onChange={(e) => setEditingEdu({...editingEdu, start_year: e.target.value})} />
+                <Input label="End Year" type="number" className="w-1/2" value={editingEdu.end_year || ''} onChange={(e) => setEditingEdu({...editingEdu, end_year: e.target.value})} />
               </div>
-              <ProgressBar value={85} className="h-2" />
             </div>
-          </Card>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setEditingEdu(null)}>Cancel</Button>
+              <Button size="sm" onClick={() => saveEducation(editingEdu)}>Save</Button>
+            </div>
+          </div>
+        )}
 
-          <Card className="bg-surface border border-border rounded-[8px] p-3">
-            <TabsList className="flex-col bg-transparent h-auto space-y-1">
-              <TabsTrigger value="personal" className="w-full justify-start p-3 data-[state=active]:bg-surface-alt data-[state=active]:text-primary border border-transparent data-[state=active]:border-border text-sm font-medium"><User size={18} className="mr-2.5 shrink-0"/> Personal Info</TabsTrigger>
-              <TabsTrigger value="experience" className="w-full justify-start p-3 text-sm font-medium"><Briefcase size={18} className="mr-2.5 shrink-0"/> Experience</TabsTrigger>
-              <TabsTrigger value="education" className="w-full justify-start p-3 text-sm font-medium"><Book size={18} className="mr-2.5 shrink-0"/> Education</TabsTrigger>
-              <TabsTrigger value="skills" className="w-full justify-start p-3 text-sm font-medium"><Award size={18} className="mr-2.5 shrink-0"/> Skills ({skills.length})</TabsTrigger>
-              <TabsTrigger value="projects" className="w-full justify-start p-3 text-sm font-medium"><Code size={18} className="mr-2.5 shrink-0"/> Projects</TabsTrigger>
-              <TabsTrigger value="resume" className="w-full justify-start p-3 text-sm font-medium"><FileText size={18} className="mr-2.5 shrink-0"/> Resume</TabsTrigger>
-            </TabsList>
-          </Card>
+        <div className="space-y-6">
+          {educations.length === 0 && !editingEdu && <p className="text-text-muted text-sm text-center py-4">Add your educational background</p>}
+          {educations.map(edu => (
+            <div key={edu.id} className="relative group pl-6 border-l-2 border-surface-alt pb-6 last:pb-0">
+              <div className="absolute w-3 h-3 bg-primary rounded-full -left-[7px] top-2"></div>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className="font-bold text-text text-lg">{edu.institution}</h4>
+                  <p className="text-text-muted">{edu.degree}{edu.field ? ` in ${edu.field}` : ''}</p>
+                  <p className="text-sm text-text-muted mt-1">{edu.start_year} - {edu.end_year || 'Present'}</p>
+                </div>
+                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => setEditingEdu(edu)} className="p-2 text-text-muted hover:text-primary"><Edit2 size={16} /></button>
+                  <button onClick={() => deleteEducation(edu.id)} className="p-2 text-text-muted hover:text-red-500"><Trash2 size={16} /></button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
-
-        {/* Main Content Area */}
-        <div className="w-full md:w-2/3 lg:w-3/4">
-            
-          {/* PERSONAL INFO */}
-          <TabsContent value="personal" className="mt-0">
-            <Card className="bg-surface border border-border rounded-[8px] p-6">
-              <h3 className="text-xl serif font-bold text-text mb-6">Personal Information</h3>
-              <form onSubmit={handleSavePersonal} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Full Name</label>
-                    <Input 
-                      value={fullName} 
-                      onChange={(e) => setFullName(e.target.value)} 
-                      placeholder="Alex Morgan" 
-                      className="bg-surface-alt border-border"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Headline</label>
-                    <Input 
-                      value={headline} 
-                      onChange={(e) => setHeadline(e.target.value)} 
-                      placeholder="Senior React Developer" 
-                      className="bg-surface-alt border-border"
-                    />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Bio / About</label>
-                    <textarea 
-                      value={bio} 
-                      onChange={(e) => setBio(e.target.value)} 
-                      className="w-full bg-surface-alt border border-border rounded-[8px] p-3 text-text text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none min-h-[100px]" 
-                      placeholder="Tell recruiters about yourself..." 
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Location</label>
-                    <Input 
-                      value={location} 
-                      onChange={(e) => setLocation(e.target.value)} 
-                      placeholder="San Francisco, CA" 
-                      className="bg-surface-alt border-border"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">Phone</label>
-                    <Input 
-                      value={phone} 
-                      onChange={(e) => setPhone(e.target.value)} 
-                      placeholder="+1 (555) 000-0000" 
-                      className="bg-surface-alt border-border"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">LinkedIn Profile</label>
-                    <Input 
-                      value={linkedin} 
-                      onChange={(e) => setLinkedin(e.target.value)} 
-                      placeholder="https://linkedin.com/in/username" 
-                      className="bg-surface-alt border-border"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-text-secondary">GitHub Profile</label>
-                    <Input 
-                      value={github} 
-                      onChange={(e) => setGithub(e.target.value)} 
-                      placeholder="https://github.com/username" 
-                      className="bg-surface-alt border-border"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-4 flex justify-end">
-                  <Button type="submit" className="bg-gold hover:bg-gold-light text-[#201607] font-semibold px-6">
-                    <Save size={18} className="mr-2"/> Save Changes
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </TabsContent>
-          
-          {/* EXPERIENCE */}
-          <TabsContent value="experience" className="mt-0">
-            <Card className="bg-surface border border-border rounded-[8px] p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl serif font-bold text-text">Experience</h3>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => {
-                    setExperiences([...experiences, { id: Date.now(), title: 'Software Engineer', company: 'Tech Corp', period: '2023 - Present', desc: 'Developed web tools.' }]);
-                    toast.success('Experience entry added');
-                  }}
-                  className="border-border hover:border-primary"
-                >
-                  <Plus size={16} className="mr-1"/> Add Experience
-                </Button>
-              </div>
-              
-              <div className="space-y-6">
-                {experiences.map((exp) => (
-                  <div key={exp.id} className="p-4 bg-surface-alt border border-border rounded-[8px] relative group hover:border-primary transition-colors">
-                    <button 
-                      onClick={() => {
-                        setExperiences(experiences.filter(e => e.id !== exp.id));
-                        toast.success('Experience deleted');
-                      }}
-                      className="absolute top-4 right-4 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                    <h4 className="text-base font-semibold text-text">{exp.title}</h4>
-                    <p className="text-xs text-text-secondary mb-2">{exp.company} • {exp.period}</p>
-                    <p className="text-sm text-text-muted">{exp.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </TabsContent>
-
-          {/* EDUCATION */}
-          <TabsContent value="education" className="mt-0">
-            <Card className="bg-surface border border-border rounded-[8px] p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl serif font-bold text-text">Education</h3>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    setEducationList([...educationList, { id: Date.now(), degree: 'M.S. Software Engineering', school: 'Stanford University', period: '2022 - 2024', grade: '3.9 GPA' }]);
-                    toast.success('Education entry added');
-                  }}
-                  className="border-border hover:border-primary"
-                >
-                  <Plus size={16} className="mr-1"/> Add Education
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                {educationList.map((edu) => (
-                  <div key={edu.id} className="p-4 bg-surface-alt border border-border rounded-[8px] relative group hover:border-primary transition-colors">
-                    <button 
-                      onClick={() => {
-                        setEducationList(educationList.filter(e => e.id !== edu.id));
-                        toast.success('Education entry deleted');
-                      }}
-                      className="absolute top-4 right-4 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                    <h4 className="text-base font-semibold text-text">{edu.degree}</h4>
-                    <p className="text-xs text-text-secondary">{edu.school} • {edu.period}</p>
-                    <p className="text-xs text-gold font-mono mt-1">{edu.grade}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </TabsContent>
-
-          {/* SKILLS */}
-          <TabsContent value="skills" className="mt-0">
-            <Card className="bg-surface border border-border rounded-[8px] p-6">
-              <h3 className="text-xl serif font-bold text-text mb-4">Skills & Endorsements</h3>
-              
-              <div className="flex gap-2 mb-6">
-                <Input 
-                  value={newSkill} 
-                  onChange={(e) => setNewSkill(e.target.value)} 
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddSkill(); }}
-                  placeholder="Add a new skill (e.g. Python, AWS)..." 
-                  className="bg-surface-alt border-border"
-                />
-                <Button onClick={handleAddSkill} className="bg-gold hover:bg-gold-light text-[#201607] px-5">Add</Button>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {skills.map((skill) => (
-                  <Badge key={skill} className="bg-surface-alt border border-border text-text px-3 py-1.5 flex items-center gap-2 text-sm">
-                    {skill}
-                    <button onClick={() => handleRemoveSkill(skill)} className="text-text-muted hover:text-danger">
-                      ✕
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            </Card>
-          </TabsContent>
-
-          {/* PROJECTS */}
-          <TabsContent value="projects" className="mt-0">
-            <Card className="bg-surface border border-border rounded-[8px] p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl serif font-bold text-text">Featured Projects</h3>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => {
-                    setProjects([...projects, { id: Date.now(), name: 'AI Resume Scanner', desc: 'ATS scanner built with OpenAI & React.', tags: ['AI', 'React'], url: 'https://github.com' }]);
-                    toast.success('Project added');
-                  }}
-                  className="border-border hover:border-primary"
-                >
-                  <Plus size={16} className="mr-1"/> Add Project
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                {projects.map((proj) => (
-                  <div key={proj.id} className="p-4 bg-surface-alt border border-border rounded-[8px] relative group hover:border-primary transition-colors">
-                    <button 
-                      onClick={() => {
-                        setProjects(projects.filter(p => p.id !== proj.id));
-                        toast.success('Project deleted');
-                      }}
-                      className="absolute top-4 right-4 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                    <h4 className="text-base font-semibold text-text">{proj.name}</h4>
-                    <p className="text-sm text-text-secondary my-2">{proj.desc}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {proj.tags.map(t => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </TabsContent>
-
-          {/* RESUME */}
-          <TabsContent value="resume" className="mt-0">
-            <Card className="bg-surface border border-border rounded-[8px] p-6 space-y-6">
-              <h3 className="text-xl serif font-bold text-text">Resume Management</h3>
-              
-              <div className="p-6 bg-surface-alt border-2 border-dashed border-border hover:border-primary rounded-[8px] text-center cursor-pointer transition-colors" onClick={() => toast.success('New resume uploaded successfully!')}>
-                <Upload size={32} className="mx-auto text-primary mb-2" />
-                <p className="font-semibold text-text">Click to upload new resume</p>
-                <p className="text-xs text-text-muted mt-1">Supports PDF, DOCX (Max 10MB)</p>
-              </div>
-
-              <div className="p-4 bg-surface-alt border border-border rounded-[8px] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText className="text-primary" size={24} />
-                  <div>
-                    <p className="font-semibold text-text text-sm">Alex_Morgan_Resume_2026.pdf</p>
-                    <p className="text-xs text-text-muted">Uploaded 2 days ago • 1.4 MB</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => toast.success('Downloading resume...')} className="border-border hover:border-primary">
-                  Download
-                </Button>
-              </div>
-            </Card>
-          </TabsContent>
-            
-        </div>
-      </Tabs>
-    </motion.div>
+      </Card>
+      
+      {/* Mobile save button floating at bottom */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 md:hidden">
+        <Button onClick={handleSaveProfile} isLoading={saving} className="shadow-lg shadow-primary/25 rounded-full px-8">
+          Save Changes
+        </Button>
+      </div>
+    </div>
   );
 }

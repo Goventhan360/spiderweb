@@ -1,178 +1,206 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Search, Filter, MoreVertical, Edit, Eye, Users, Trash2, Power } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Link } from 'react-router-dom';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
-import Badge from '@/components/ui/Badge';
-import { cn } from '@/utils/helpers';
+import { Plus, Search, Edit2, Trash2, Users, Eye, MoreVertical } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const mockJobs = [
-  { id: '1', title: 'Senior React Developer', department: 'Engineering', status: 'Active', applicants: 45, views: 1205, postedAt: '2023-10-01' },
-  { id: '2', title: 'UX/UI Designer', department: 'Design', status: 'Active', applicants: 32, views: 890, postedAt: '2023-10-05' },
-  { id: '3', title: 'Full Stack Engineer', department: 'Engineering', status: 'Inactive', applicants: 120, views: 3400, postedAt: '2023-09-15' },
-  { id: '4', title: 'Product Manager', department: 'Product', status: 'Active', applicants: 15, views: 450, postedAt: '2023-10-10' },
-  { id: '5', title: 'DevOps Specialist', department: 'Engineering', status: 'Active', applicants: 8, views: 310, postedAt: '2023-10-12' },
-  { id: '6', title: 'Marketing Director', department: 'Marketing', status: 'Inactive', applicants: 85, views: 2100, postedAt: '2023-08-20' },
-];
-
 export default function ManageJobs() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [jobs, setJobs] = useState(mockJobs);
+  const { user } = useAuth();
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('All');
+  const [search, setSearch] = useState('');
 
-  const filteredJobs = jobs.filter(job => {
-    const matchesSearch = job.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || job.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  useEffect(() => {
+    if (user) fetchJobs();
+  }, [user]);
 
-  const toggleStatus = (id) => {
-    setJobs(jobs.map(job => {
-      if (job.id === id) {
-        const newStatus = job.status === 'Active' ? 'Inactive' : 'Active';
-        toast.success(`Job marked as ${newStatus}`);
-        return { ...job, status: newStatus };
-      }
-      return job;
-    }));
-  };
+  const fetchJobs = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*, applications(count)')
+        .eq('recruiter_id', user.id)
+        .order('created_at', { ascending: false });
 
-  const deleteJob = (id) => {
-    if (window.confirm('Are you sure you want to delete this job posting?')) {
-      setJobs(jobs.filter(job => job.id !== id));
-      toast.success('Job deleted successfully');
+      if (error) throw error;
+      setJobs(data || []);
+    } catch (err) {
+      toast.error('Failed to load jobs');
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
+  const handleDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
+      try {
+        const { error } = await supabase.from('jobs').delete().eq('id', id);
+        if (error) throw error;
+        toast.success('Job deleted successfully');
+        setJobs(jobs.filter(j => j.id !== id));
+      } catch (err) {
+        toast.error('Failed to delete job');
+      }
+    }
+  };
+
+  const toggleStatus = async (job) => {
+    const newStatus = job.status === 'Active' ? 'Inactive' : 'Active';
+    try {
+      const { error } = await supabase.from('jobs').update({ status: newStatus }).eq('id', job.id);
+      if (error) throw error;
+      toast.success(`Job marked as ${newStatus}`);
+      setJobs(jobs.map(j => j.id === job.id ? { ...j, status: newStatus } : j));
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const filteredJobs = jobs.filter(job => {
+    const matchesSearch = job.title.toLowerCase().includes(search.toLowerCase());
+    if (filter === 'All') return matchesSearch;
+    return matchesSearch && job.status === filter;
+  });
+
   return (
-    <motion.div 
-      className="p-6 max-w-7xl mx-auto space-y-6"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-    >
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl serif font-bold text-text">Manage Jobs</h1>
-          <p className="text-text-muted mt-1">View, edit, and track the performance of your job listings.</p>
+          <h1 className="text-3xl font-bold text-text">Manage Jobs</h1>
+          <p className="text-text-muted mt-1">View and manage your posted jobs.</p>
         </div>
-        <Link to="/recruiter/jobs/new">
-          <Button variant="primary">Post New Job</Button>
+        <Link to="/recruiter/jobs/create" className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary/90 transition-colors">
+          <Plus size={20} /> Post New Job
         </Link>
       </div>
 
-      {/* Filters */}
-      <Card className="p-4 glass border-border flex flex-col md:flex-row gap-4">
-        <div className="flex-1">
-          <Input 
-            icon={<Search size={18} />} 
-            placeholder="Search jobs by title..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="bg-surface"
-          />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-surface border border-border rounded-xl p-6">
+          <p className="text-text-muted text-sm">Total Jobs</p>
+          <p className="text-2xl font-bold text-text mt-1">{jobs.length}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-text-muted flex items-center gap-1"><Filter size={16}/> Status:</span>
-          {['All', 'Active', 'Inactive'].map(status => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm transition-colors border",
-                statusFilter === status 
-                  ? "bg-primary/10 text-primary border-primary/50" 
-                  : "bg-transparent text-text-secondary border-border hover:border-text-muted"
-              )}
-            >
-              {status}
-            </button>
-          ))}
+        <div className="bg-surface border border-border rounded-xl p-6">
+          <p className="text-text-muted text-sm">Active Jobs</p>
+          <p className="text-2xl font-bold text-primary mt-1">{jobs.filter(j => j.status === 'Active').length}</p>
         </div>
-      </Card>
+        <div className="bg-surface border border-border rounded-xl p-6">
+          <p className="text-text-muted text-sm">Total Applicants</p>
+          <p className="text-2xl font-bold text-text mt-1">{jobs.reduce((acc, job) => acc + (job.applications?.[0]?.count || 0), 0)}</p>
+        </div>
+      </div>
 
-      {/* Jobs Table */}
-      <Card className="glass border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-surface-alt border-b border-border">
-                <th className="p-4 text-sm font-medium text-text-secondary">Job Title</th>
-                <th className="p-4 text-sm font-medium text-text-secondary">Status</th>
-                <th className="p-4 text-sm font-medium text-text-secondary">Applicants</th>
-                <th className="p-4 text-sm font-medium text-text-secondary">Views</th>
-                <th className="p-4 text-sm font-medium text-text-secondary">Posted Date</th>
-                <th className="p-4 text-sm font-medium text-text-secondary text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredJobs.length === 0 ? (
+      <div className="bg-surface border border-border rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-border flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex gap-2 w-full md:w-auto overflow-x-auto">
+            {['All', 'Active', 'Inactive', 'Draft', 'Closed'].map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${filter === f ? 'bg-primary text-white' : 'text-text-muted hover:bg-dark'}`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
+            <input
+              type="text"
+              placeholder="Search jobs..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-dark border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-text focus:border-primary outline-none"
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-8 text-center text-text-muted">Loading jobs...</div>
+        ) : filteredJobs.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="w-16 h-16 bg-dark rounded-full flex items-center justify-center mx-auto mb-4 border border-border">
+              <Briefcase className="text-text-muted" size={24} />
+            </div>
+            <h3 className="text-lg font-medium text-text mb-2">No jobs found</h3>
+            <p className="text-text-muted mb-6">You haven't posted any jobs matching this criteria.</p>
+            {jobs.length === 0 && (
+              <Link to="/recruiter/jobs/create" className="inline-flex bg-primary text-white px-4 py-2 rounded-lg items-center gap-2 hover:bg-primary/90 transition-colors">
+                Post Your First Job
+              </Link>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left whitespace-nowrap">
+              <thead className="bg-dark border-b border-border">
                 <tr>
-                  <td colSpan="6" className="p-8 text-center text-text-muted border-b border-border">
-                    No jobs found matching your criteria.
-                  </td>
+                  <th className="p-4 text-sm font-medium text-text-muted">Job Details</th>
+                  <th className="p-4 text-sm font-medium text-text-muted">Stats</th>
+                  <th className="p-4 text-sm font-medium text-text-muted">Status</th>
+                  <th className="p-4 text-sm font-medium text-text-muted">Actions</th>
                 </tr>
-              ) : (
-                filteredJobs.map(job => (
-                  <tr key={job.id} className="border-b border-border/50 hover:bg-surface-alt transition-colors group">
+              </thead>
+              <tbody>
+                {filteredJobs.map(job => (
+                  <tr key={job.id} className="border-b border-border/50 hover:bg-dark/50 transition-colors">
                     <td className="p-4">
                       <div>
-                        <div className="font-medium text-text">{job.title}</div>
-                        <div className="text-xs text-text-muted mt-1">{job.department}</div>
+                        <div className="font-medium text-text flex items-center gap-2">
+                          {job.title}
+                          {job.is_featured && <span className="bg-gold/20 text-gold text-[10px] px-2 py-0.5 rounded uppercase font-bold">Featured</span>}
+                        </div>
+                        <div className="text-sm text-text-muted mt-1">{job.location} • {job.job_type}</div>
                       </div>
                     </td>
                     <td className="p-4">
-                      <Badge variant="outline" className={job.status === 'Active' ? 'text-primary border-primary/50' : 'text-text-muted border-border'}>
+                      <div className="flex gap-4">
+                        <div className="text-center" title="Views">
+                          <Eye size={16} className="text-text-muted mx-auto mb-1" />
+                          <span className="text-sm text-text">{job.views_count || 0}</span>
+                        </div>
+                        <div className="text-center" title="Applicants">
+                          <Users size={16} className="text-text-muted mx-auto mb-1" />
+                          <span className="text-sm text-text">{job.applications?.[0]?.count || 0}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        job.status === 'Active' ? 'bg-green-500/20 text-green-500' : 
+                        job.status === 'Draft' ? 'bg-gray-500/20 text-gray-400' :
+                        'bg-red-500/20 text-red-500'
+                      }`}>
                         {job.status}
-                      </Badge>
+                      </span>
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <Users size={16} className="text-text-muted" />
-                        <span className="font-medium mono">{job.applicants}</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-sm text-text-secondary mono">
-                      {job.views.toLocaleString()}
-                    </td>
-                    <td className="p-4 text-sm text-text-secondary mono">
-                      {job.postedAt}
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          icon={<Power size={14} />} 
-                          title={job.status === 'Active' ? 'Deactivate' : 'Activate'}
-                          onClick={() => toggleStatus(job.id)}
-                          className={job.status === 'Active' ? 'hover:text-gold' : 'hover:text-primary'}
-                        />
-                        <Link to={`/recruiter/jobs/${job.id}/edit`}>
-                          <Button variant="ghost" size="sm" icon={<Edit size={14} />} title="Edit" className="hover:text-primary" />
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => toggleStatus(job)} className="text-text-muted hover:text-primary transition-colors text-sm" title="Toggle Status">
+                          {job.status === 'Active' ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <Link to={`/recruiter/jobs/${job.id}/edit`} className="text-text-muted hover:text-blue-500 transition-colors">
+                          <Edit2 size={18} />
                         </Link>
-                        <Link to={`/recruiter/applicants?jobId=${job.id}`}>
-                          <Button variant="ghost" size="sm" icon={<Eye size={14} />} title="View Applicants" className="hover:text-primary" />
-                        </Link>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          icon={<Trash2 size={14} />} 
-                          title="Delete" 
-                          onClick={() => deleteJob(job.id)}
-                          className="hover:text-[#F87171] hover:bg-[#F87171]/10" 
-                        />
+                        <button onClick={() => handleDelete(job.id)} className="text-text-muted hover:text-red-500 transition-colors">
+                          <Trash2 size={18} />
+                        </button>
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </motion.div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   );
+}
+
+function Briefcase({ className, size }) {
+  return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>;
 }

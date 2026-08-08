@@ -1,187 +1,236 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Briefcase, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, FileText, Calendar, MoreHorizontal } from 'lucide-react';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Briefcase, Building, MapPin, Calendar, Clock, ChevronRight, Search, FileText } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+import Avatar from '@/components/ui/Avatar';
+import Skeleton from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
+import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 
 export default function Applications() {
-  const [expandedId, setExpandedId] = useState(null);
+  const { user } = useAuth();
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('All');
+  
+  const tabs = ['All', 'Applied', 'Screening', 'Interview', 'Offered', 'Rejected'];
 
-  const pageVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { duration: 0.5, staggerChildren: 0.1 } },
+  useEffect(() => {
+    if (user) fetchApplications();
+  }, [user]);
+
+  const fetchApplications = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('applications')
+        .select(`
+          *,
+          job:jobs (
+            id, title, location, work_mode,
+            company:companies (id, name, logo_url)
+          )
+        `)
+        .eq('candidate_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setApplications(data || []);
+    } catch (error) {
+      console.error('Error fetching applications:', error);
+      toast.error('Failed to load applications');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 },
+  const handleWithdraw = async (id) => {
+    if (!window.confirm('Are you sure you want to withdraw this application?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setApplications(prev => prev.filter(app => app.id !== id));
+      toast.success('Application withdrawn');
+    } catch (error) {
+      console.error('Error withdrawing:', error);
+      toast.error('Failed to withdraw application');
+    }
   };
 
-  const applications = [
-    { id: 1, title: 'Senior React Developer', company: 'CyberDyne', appliedDate: '2 days ago', status: 'Interview', match: 92, statusColor: 'text-gold border-gold bg-gold/10' },
-    { id: 2, title: 'Frontend Engineer', company: 'OmniCorp', appliedDate: '1 week ago', status: 'Screening', match: 88, statusColor: 'text-primary border-primary bg-primary/10' },
-    { id: 3, title: 'UI Developer', company: 'Stark Industries', appliedDate: '2 weeks ago', status: 'Applied', match: 85, statusColor: 'text-text-secondary border-border-light bg-surface-alt' },
-    { id: 4, title: 'Lead Web Developer', company: 'Wayne Ent.', appliedDate: '3 weeks ago', status: 'Rejected', match: 75, statusColor: 'text-text-muted border-border bg-surface' },
-  ];
-
-  const filteredApps = activeTab === 'All' ? applications : applications.filter(a => a.status === activeTab);
-
-  const toggleExpand = (id) => {
-    setExpandedId(expandedId === id ? null : id);
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'applied': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+      case 'screening': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
+      case 'interview': return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
+      case 'offered': return 'bg-green-500/10 text-green-500 border-green-500/20';
+      case 'rejected': return 'bg-red-500/10 text-red-500 border-red-500/20';
+      default: return 'bg-gray-500/10 text-gray-500 border-gray-500/20';
+    }
   };
 
-  const pipeline = ['Applied', 'Screening', 'Interview', 'Offered'];
+  const filteredApplications = activeTab === 'All' 
+    ? applications 
+    : applications.filter(app => app.status?.toLowerCase() === activeTab.toLowerCase());
+
+  // Stats
+  const total = applications.length;
+  const active = applications.filter(a => !['offered', 'rejected'].includes(a.status?.toLowerCase())).length;
+  const interviews = applications.filter(a => a.status?.toLowerCase() === 'interview').length;
+  const offers = applications.filter(a => a.status?.toLowerCase() === 'offered').length;
 
   return (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
-      <div className="mb-6">
-        <h1 className="text-3xl serif font-bold text-text">My Applications</h1>
-        <p className="text-text-secondary mt-1">Track your job applications and interview status.</p>
+    <div className="max-w-7xl mx-auto space-y-8">
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold text-text">My Applications</h1>
+          <p className="text-text-muted mt-1">Track and manage your job applications.</p>
+        </div>
+        <Button as={Link} to="/candidate/jobs" leftIcon={<Search size={18} />}>
+          Find More Jobs
+        </Button>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="bg-surface border border-border flex overflow-x-auto p-1 mb-6">
-          {['All', 'Applied', 'Screening', 'Interview', 'Offered', 'Rejected'].map(tab => (
-            <TabsTrigger key={tab} value={tab} className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-white">
-              {tab}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="p-4 flex flex-col justify-center items-center text-center">
+          <span className="text-3xl font-bold text-text">{loading ? <Skeleton className="h-8 w-12 mx-auto" /> : total}</span>
+          <span className="text-sm text-text-muted mt-1">Total Applied</span>
+        </Card>
+        <Card className="p-4 flex flex-col justify-center items-center text-center border-blue-500/20 bg-blue-500/5">
+          <span className="text-3xl font-bold text-blue-500">{loading ? <Skeleton className="h-8 w-12 mx-auto" /> : active}</span>
+          <span className="text-sm text-blue-500/80 mt-1">Active</span>
+        </Card>
+        <Card className="p-4 flex flex-col justify-center items-center text-center border-purple-500/20 bg-purple-500/5">
+          <span className="text-3xl font-bold text-purple-500">{loading ? <Skeleton className="h-8 w-12 mx-auto" /> : interviews}</span>
+          <span className="text-sm text-purple-500/80 mt-1">Interviews</span>
+        </Card>
+        <Card className="p-4 flex flex-col justify-center items-center text-center border-green-500/20 bg-green-500/5">
+          <span className="text-3xl font-bold text-green-500">{loading ? <Skeleton className="h-8 w-12 mx-auto" /> : offers}</span>
+          <span className="text-sm text-green-500/80 mt-1">Offers</span>
+        </Card>
+      </div>
 
-        <div className="space-y-4">
-          {filteredApps.length === 0 ? (
-            <EmptyState 
-              icon={<Briefcase size={48} className="text-text-muted" />}
-              title={`No ${activeTab !== 'All' ? activeTab.toLowerCase() : ''} applications`}
-              description="You haven't reached this stage for any applications yet."
-            />
-          ) : (
-            filteredApps.map((app) => (
-              <motion.div key={app.id} variants={itemVariants}>
-                <Card className="bg-surface rounded-[8px] overflow-hidden border border-border hover:border-primary transition-colors">
-                  <div 
-                    className="p-5 flex flex-col md:flex-row justify-between items-start md:items-center cursor-pointer gap-4"
-                    onClick={() => toggleExpand(app.id)}
-                  >
-                    <div className="flex gap-4 items-center">
-                      <div className="w-12 h-12 rounded-[8px] bg-surface-alt flex items-center justify-center serif font-bold text-xl text-primary border border-border-light shrink-0">
-                        {app.company[0]}
-                      </div>
-                      <div>
-                        <h3 className="text-lg serif font-semibold text-text">{app.title}</h3>
-                        <p className="text-sm text-text-secondary">{app.company} • Applied {app.appliedDate}</p>
-                      </div>
-                    </div>
+      {/* Tabs */}
+      <div className="flex overflow-x-auto pb-2 gap-2 hide-scrollbar">
+        {tabs.map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === tab 
+                ? 'bg-primary text-primary-content' 
+                : 'bg-surface border border-border text-text-muted hover:text-text hover:bg-surface-alt'
+            }`}
+          >
+            {tab}
+            {tab !== 'All' && applications.length > 0 && (
+              <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${activeTab === tab ? 'bg-black/20' : 'bg-surface-alt'}`}>
+                {applications.filter(a => a.status?.toLowerCase() === tab.toLowerCase()).length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Applications List */}
+      <div>
+        {loading ? (
+          <div className="space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <Card key={i} className="p-6">
+                <div className="flex gap-4">
+                  <Skeleton className="w-16 h-16 rounded-xl" />
+                  <div className="flex-1 space-y-3">
+                    <Skeleton className="h-6 w-1/3" />
+                    <Skeleton className="h-4 w-1/4" />
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : filteredApplications.length > 0 ? (
+          <div className="space-y-4">
+            {filteredApplications.map((app) => (
+              <motion.div key={app.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row gap-6">
+                    <Avatar 
+                      src={app.job.company?.logo_url} 
+                      alt={app.job.company?.name} 
+                      fallback={app.job.company?.name?.[0]} 
+                      className="w-16 h-16 rounded-xl shrink-0" 
+                    />
                     
-                    <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-                      <div className="flex flex-col items-center md:items-end hidden sm:flex">
-                        <span className="text-xs text-text-secondary mb-1">AI Match</span>
-                        <span className="text-primary mono font-bold text-sm">{app.match}%</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                        <div>
+                          <Link to={`/candidate/jobs/${app.job.id}`} className="text-xl font-bold text-text hover:text-primary transition-colors truncate block">
+                            {app.job.title}
+                          </Link>
+                          <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-text-muted">
+                            <span className="flex items-center gap-1 font-medium text-text">
+                              <Building size={16} /> {app.job.company?.name}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <MapPin size={16} /> {app.job.location || 'Remote'}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Calendar size={16} /> Applied {new Date(app.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                          <span className={`px-3 py-1.5 text-sm font-medium rounded-full border ${getStatusColor(app.status)}`}>
+                            {app.status}
+                          </span>
+                        </div>
                       </div>
-                      <Badge className={app.statusColor}>{app.status}</Badge>
-                      <Button variant="ghost" size="icon" className="text-text-secondary">
-                        {expandedId === app.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                      </Button>
+                      
+                      <div className="mt-6 pt-6 border-t border-border flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text">Match Score:</span>
+                          <div className="w-32 bg-surface-alt rounded-full h-2">
+                            <div className="bg-primary h-2 rounded-full" style={{ width: `${app.match_score || 0}%` }}></div>
+                          </div>
+                          <span className="text-sm text-text-muted">{app.match_score || 0}%</span>
+                        </div>
+                        
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          <Button variant="outline" size="sm" onClick={() => handleWithdraw(app.id)} className="flex-1 sm:flex-none text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20">
+                            Withdraw
+                          </Button>
+                          <Button variant="secondary" size="sm" as={Link} to={`/candidate/jobs/${app.job.id}`} className="flex-1 sm:flex-none">
+                            View Job
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Expanded Content */}
-                  {expandedId === app.id && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="border-t border-border-light p-5 bg-surface-alt"
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="md:col-span-2 space-y-6">
-                          {/* Status Pipeline Visualization */}
-                          <div className="mb-6">
-                            <h4 className="text-sm font-semibold text-text mb-3">Application Pipeline</h4>
-                            <div className="flex items-center w-full">
-                              {pipeline.map((step, index) => {
-                                const currentIndex = pipeline.indexOf(app.status !== 'Rejected' ? app.status : 'Applied');
-                                const isCompleted = index <= currentIndex;
-                                const isCurrent = index === currentIndex;
-                                return (
-                                  <div key={step} className="flex-1 relative">
-                                    <div className="flex items-center">
-                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 
-                                        ${isCompleted ? 'bg-primary text-white' : 'bg-surface border-2 border-border-light text-text-muted'}`}>
-                                        {isCompleted ? <CheckCircle size={16} /> : <span className="text-xs">{index + 1}</span>}
-                                      </div>
-                                      {index < pipeline.length - 1 && (
-                                        <div className={`h-1 flex-1 mx-2 rounded-full ${index < currentIndex ? 'bg-primary' : 'bg-border-light'}`}></div>
-                                      )}
-                                    </div>
-                                    <p className={`text-xs mt-2 font-medium ${isCurrent ? 'text-primary' : (isCompleted ? 'text-text' : 'text-text-muted')}`}>
-                                      {step}
-                                    </p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          <div className="space-y-4">
-                            <h4 className="text-sm font-semibold text-text flex items-center gap-2"><FileText size={16} className="text-text-secondary" /> Cover Letter snippet</h4>
-                            <p className="text-sm text-text-secondary p-3 bg-surface rounded-[8px] border border-border-light italic">
-                              "I am writing to express my interest in the {app.title} position at {app.company}. With my background in building highly scalable applications using React..."
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-semibold text-text flex items-center gap-2"><Calendar size={16} className="text-primary" /> Application Timeline</h4>
-                          <div className="relative border-l border-border ml-2 space-y-6 pb-2">
-                            {/* Current/Latest Step */}
-                            <div className="relative pl-6">
-                              <div className="absolute -left-[5px] top-1.5 w-[9px] h-[9px] rounded-full bg-primary ring-4 ring-bg"></div>
-                              <div className="flex justify-between items-start mb-1">
-                                <p className="text-sm font-medium text-primary">{app.status}</p>
-                                <span className="text-[11px] text-text-muted">Today, 2:30 PM</span>
-                              </div>
-                              <p className="text-xs text-text-secondary">Your application was moved to {app.status}.</p>
-                            </div>
-                            
-                            {/* Previous Step 1 */}
-                            {app.status !== 'Applied' && (
-                              <div className="relative pl-6">
-                                <div className="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-border ring-4 ring-bg"></div>
-                                <div className="flex justify-between items-start mb-1">
-                                  <p className="text-sm font-medium text-text">Under Review</p>
-                                  <span className="text-[11px] text-text-muted">2 days ago</span>
-                                </div>
-                                <p className="text-xs text-text-secondary">Hiring team began reviewing your profile.</p>
-                              </div>
-                            )}
-
-                            {/* Initial Step */}
-                            <div className="relative pl-6">
-                              <div className="absolute -left-[4px] top-1.5 w-[7px] h-[7px] rounded-full bg-border ring-4 ring-bg"></div>
-                              <div className="flex justify-between items-start mb-1">
-                                <p className="text-sm font-medium text-text">Applied</p>
-                                <span className="text-[11px] text-text-muted">{app.appliedDate}</span>
-                              </div>
-                              <p className="text-xs text-text-secondary">Application submitted successfully.</p>
-                            </div>
-                          </div>
-                          
-                          <Button className="w-full mt-4 bg-surface hover:bg-surface-alt border border-border">View Full Details</Button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
                 </Card>
               </motion.div>
-            ))
-          )}
-        </div>
-      </Tabs>
-    </motion.div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState 
+            icon={<FileText size={48} />}
+            title={`No ${activeTab !== 'All' ? activeTab.toLowerCase() : ''} applications`}
+            description={activeTab === 'All' ? "You haven't applied to any jobs yet. Start your journey today!" : `You don't have any applications in the ${activeTab} stage.`}
+            action={<Button as={Link} to="/candidate/jobs">Browse Jobs</Button>}
+          />
+        )}
+      </div>
+    </div>
   );
 }

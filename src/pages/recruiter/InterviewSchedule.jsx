@@ -1,90 +1,124 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Calendar as CalendarIcon, Clock, Video, User, Plus, Search } from 'lucide-react';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import Badge from '@/components/ui/Badge';
-import Input from '@/components/ui/Input';
-import Avatar from '@/components/ui/Avatar';
-
-const upcomingInterviews = [
-  { id: 1, candidate: 'Alex Johnson', role: 'Senior React Dev', date: '2023-10-25', time: '14:00', duration: '60 min', type: 'Technical', status: 'Scheduled', link: 'meet.google.com/abc' },
-  { id: 2, candidate: 'Sarah Williams', role: 'UX Designer', date: '2023-10-25', time: '16:30', duration: '45 min', type: 'Portfolio', status: 'Scheduled', link: 'meet.google.com/def' },
-  { id: 3, candidate: 'Michael Chen', role: 'Full Stack', date: '2023-10-26', time: '10:00', duration: '30 min', type: 'Screening', status: 'Scheduled', link: 'zoom.us/j/123' },
-  { id: 4, candidate: 'Emily Davis', role: 'Product Manager', date: '2023-10-24', time: '11:00', duration: '60 min', type: 'Final', status: 'Completed', link: '' },
-];
+import React, { useEffect, useState } from 'react';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Calendar as CalendarIcon, Video, Phone, Users, Clock, ExternalLink } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function InterviewSchedule() {
-  const [searchTerm, setSearchTerm] = useState('');
+  const { user } = useAuth();
+  const [interviews, setInterviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user) fetchInterviews();
+  }, [user]);
+
+  const fetchInterviews = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('interviews')
+        .select(`
+          *,
+          candidate:profiles!candidate_id(full_name, avatar_url),
+          job:jobs(title)
+        `)
+        .eq('recruiter_id', user.id)
+        .order('scheduled_at', { ascending: true });
+
+      if (error) throw error;
+      setInterviews(data || []);
+    } catch (err) {
+      toast.error('Failed to load interviews');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getIcon = (type) => {
+    if (type?.toLowerCase().includes('video')) return <Video size={16} />;
+    if (type?.toLowerCase().includes('phone')) return <Phone size={16} />;
+    return <Users size={16} />;
+  };
+
+  const upcoming = interviews.filter(i => new Date(i.scheduled_at) >= new Date());
+  const past = interviews.filter(i => new Date(i.scheduled_at) < new Date());
+
+  const renderInterviewCard = (interview) => (
+    <div key={interview.id} className="bg-surface border border-border rounded-xl p-5 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center hover:border-primary/50 transition-colors">
+      <div className="flex gap-4 items-center">
+        <img 
+          src={interview.candidate?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(interview.candidate?.full_name || 'U')}&background=random`} 
+          alt={interview.candidate?.full_name} 
+          className="w-12 h-12 rounded-full border border-border"
+        />
+        <div>
+          <h3 className="font-semibold text-text">{interview.candidate?.full_name}</h3>
+          <p className="text-sm text-text-muted">For: {interview.job?.title}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4 md:gap-8 w-full md:w-auto">
+        <div>
+          <div className="flex items-center gap-2 text-text font-medium mb-1">
+            <CalendarIcon size={16} className="text-primary"/>
+            {new Date(interview.scheduled_at).toLocaleDateString()}
+          </div>
+          <div className="flex items-center gap-2 text-sm text-text-muted">
+            <Clock size={14}/>
+            {new Date(interview.scheduled_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 
+            ({interview.duration_minutes || 45} min)
+          </div>
+        </div>
+
+        <div className="flex flex-col items-start md:items-end">
+          <span className="flex items-center gap-1 text-sm bg-dark border border-border px-3 py-1 rounded-full text-text-muted mb-2">
+            {getIcon(interview.type)} {interview.type || 'Interview'}
+          </span>
+          {interview.meeting_link && (
+            <a href={interview.meeting_link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary flex items-center gap-1 hover:underline">
+              Join Meeting <ExternalLink size={14}/>
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <motion.div 
-      className="p-6 max-w-7xl mx-auto space-y-6"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-    >
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl serif font-bold text-text">Interviews</h1>
-          <p className="text-text-muted mt-1">Manage your upcoming candidate interviews.</p>
-        </div>
-        <Button variant="primary" icon={<Plus size={18} />}>Schedule Interview</Button>
+    <div className="p-6 max-w-5xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-text mb-2">Interviews</h1>
+        <p className="text-text-muted">Manage your upcoming candidate interviews.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Calendar Side (Placeholder for simplicity) */}
-        <Card className="p-4 glass border-border lg:col-span-1 h-fit">
-          <h3 className="serif font-semibold text-text mb-4">Quick Calendar</h3>
-          <div className="bg-surface-alt rounded-lg p-4 border border-border text-center aspect-square flex flex-col justify-center items-center text-text-muted">
-            <CalendarIcon size={48} className="mb-4 opacity-50 text-text-secondary" />
-            <p>Select a date to view schedules</p>
-            <p className="text-xs mt-2 mono">Oct 25, 2023</p>
-          </div>
-        </Card>
-
-        {/* Schedule List */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex gap-4 mb-2">
-            <Input 
-              icon={<Search size={16}/>} 
-              placeholder="Search by candidate or role..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1 bg-surface"
-            />
+      {loading ? (
+        <div className="text-center p-8 text-text-muted">Loading schedule...</div>
+      ) : (
+        <div className="space-y-8">
+          <div>
+            <h2 className="text-xl font-semibold text-text mb-4 border-b border-border pb-2">Upcoming Interviews</h2>
+            {upcoming.length === 0 ? (
+              <p className="text-text-muted bg-surface p-6 rounded-xl border border-border text-center">No upcoming interviews scheduled.</p>
+            ) : (
+              <div className="space-y-4">
+                {upcoming.map(renderInterviewCard)}
+              </div>
+            )}
           </div>
 
-          {upcomingInterviews.map((interview) => (
-            <Card key={interview.id} className="p-4 glass border-border hover:border-primary/50 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between border-l-4 border-l-primary">
-              <div className="flex items-center gap-4">
-                <Avatar fallback={interview.candidate} />
-                <div>
-                  <h3 className="font-bold text-text">{interview.candidate}</h3>
-                  <p className="text-sm text-text-secondary">{interview.role} • {interview.type}</p>
-                </div>
+          <div>
+            <h2 className="text-xl font-semibold text-text mb-4 border-b border-border pb-2">Past Interviews</h2>
+            {past.length === 0 ? (
+              <p className="text-text-muted text-sm italic">No past interviews.</p>
+            ) : (
+              <div className="space-y-4 opacity-75">
+                {past.map(renderInterviewCard)}
               </div>
-              
-              <div className="flex flex-col sm:items-end gap-2 text-sm w-full sm:w-auto">
-                <div className="flex items-center gap-3 text-text-muted bg-surface-alt border border-border px-3 py-1.5 rounded-md mono">
-                  <span className="flex items-center gap-1"><CalendarIcon size={14}/> {interview.date}</span>
-                  <span className="flex items-center gap-1"><Clock size={14}/> {interview.time} ({interview.duration})</span>
-                </div>
-                
-                <div className="flex items-center justify-between sm:justify-end gap-3 w-full">
-                  <Badge variant="outline" className={interview.status === 'Completed' ? 'border-primary text-primary' : 'border-gold text-gold'}>
-                    {interview.status}
-                  </Badge>
-                  {interview.status === 'Scheduled' && (
-                    <Button variant="outline" size="sm" icon={<Video size={14}/>} className="hover:text-primary hover:border-primary">
-                      Join Call
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
-          ))}
+            )}
+          </div>
         </div>
-      </div>
-    </motion.div>
+      )}
+    </div>
   );
 }

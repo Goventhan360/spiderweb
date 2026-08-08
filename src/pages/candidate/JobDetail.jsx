@@ -1,241 +1,394 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useParams, Link } from 'react-router-dom';
-import { MapPin, DollarSign, Briefcase, Clock, Bookmark, Share2, ArrowLeft, Building, Users, Globe, CheckCircle, X, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { 
+  ArrowLeft, Building, MapPin, DollarSign, Clock, Bookmark, Share2, 
+  Briefcase, GraduationCap, CheckCircle2, AlertCircle
+} from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import Input from '@/components/ui/Input';
+import Avatar from '@/components/ui/Avatar';
+import Skeleton from '@/components/ui/Skeleton';
+import EmptyState from '@/components/ui/EmptyState';
 import toast from 'react-hot-toast';
 
 export default function JobDetail() {
   const { id } = useParams();
-  const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-  const pageVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+  const [job, setJob] = useState(null);
+  const [similarJobs, setSimilarJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  const [isSaved, setIsSaved] = useState(false);
+  const [applicationStatus, setApplicationStatus] = useState(null);
+  
+  // Application Modal state
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [coverLetter, setCoverLetter] = useState('');
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    fetchJobDetails();
+    if (user) {
+      checkUserStatus();
+    }
+  }, [id, user]);
+
+  const fetchJobDetails = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch job details
+      const { data: jobData, error: jobError } = await supabase
+        .from('jobs')
+        .select(`
+          *,
+          company:companies (*)
+        `)
+        .eq('id', id)
+        .single();
+
+      if (jobError) throw jobError;
+      setJob(jobData);
+
+      // Track view (if we had a view count column)
+      // await supabase.rpc('increment_job_view', { job_id: id });
+
+      // Fetch similar jobs (naive matching on company_id or skills/job_type)
+      const { data: similar } = await supabase
+        .from('jobs')
+        .select('*, company:companies(name, logo_url)')
+        .eq('status', 'open')
+        .neq('id', id)
+        .or(`job_type.eq.${jobData.job_type},company_id.eq.${jobData.company_id}`)
+        .limit(3);
+      
+      setSimilarJobs(similar || []);
+
+    } catch (err) {
+      console.error('Error fetching job details:', err);
+      setError('Job not found or an error occurred.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleApply = (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setIsApplyModalOpen(false);
+  const checkUserStatus = async () => {
+    try {
+      // Check if saved
+      const { data: savedData } = await supabase
+        .from('saved_jobs')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('job_id', id)
+        .single();
+      
+      if (savedData) setIsSaved(true);
+
+      // Check if applied
+      const { data: appData } = await supabase
+        .from('applications')
+        .select('status, created_at')
+        .eq('candidate_id', user.id)
+        .eq('job_id', id)
+        .single();
+
+      if (appData) setApplicationStatus(appData);
+
+    } catch (error) {
+      console.error('Error checking user status:', error);
+    }
+  };
+
+  const handleToggleSave = async () => {
+    if (!user) return toast.error('Please sign in to save jobs.');
+    try {
+      if (isSaved) {
+        await supabase.from('saved_jobs').delete().eq('user_id', user.id).eq('job_id', id);
+        setIsSaved(false);
+        toast.success('Job removed from saved');
+      } else {
+        await supabase.from('saved_jobs').insert({ user_id: user.id, job_id: id });
+        setIsSaved(true);
+        toast.success('Job saved successfully');
+      }
+    } catch (error) {
+      toast.error('Failed to update saved job');
+    }
+  };
+
+  const handleApply = async () => {
+    if (!user) return toast.error('Please sign in to apply.');
+    try {
+      setApplying(true);
+      const { data, error } = await supabase
+        .from('applications')
+        .insert({
+          job_id: id,
+          candidate_id: user.id,
+          cover_letter: coverLetter,
+          status: 'Applied'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      
       toast.success('Application submitted successfully!');
-    }, 1500);
+      setApplicationStatus(data);
+      setShowApplyModal(false);
+    } catch (error) {
+      console.error('Error applying:', error);
+      toast.error('Failed to submit application. Please try again.');
+    } finally {
+      setApplying(false);
+    }
   };
+
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href);
+    toast.success('Link copied to clipboard!');
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-6">
+        <Skeleton className="h-8 w-24" />
+        <Card className="p-8 space-y-6">
+          <div className="flex gap-6">
+            <Skeleton className="h-20 w-20 rounded-xl" />
+            <div className="flex-1 space-y-4">
+              <Skeleton className="h-8 w-1/2" />
+              <Skeleton className="h-4 w-1/3" />
+            </div>
+          </div>
+          <Skeleton className="h-64 w-full" />
+        </Card>
+      </div>
+    );
+  }
+
+  if (error || !job) {
+    return (
+      <div className="max-w-5xl mx-auto">
+        <Button variant="ghost" onClick={() => navigate(-1)} leftIcon={<ArrowLeft size={16} />} className="mb-6">
+          Back
+        </Button>
+        <EmptyState 
+          icon={<AlertCircle size={48} className="text-red-500" />}
+          title="Job Not Found"
+          description={error || "The job you're looking for doesn't exist or has been removed."}
+          action={<Button as={Link} to="/candidate/jobs">Browse Other Jobs</Button>}
+        />
+      </div>
+    );
+  }
 
   return (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
-      <Button variant="ghost" size="sm" asChild className="mb-4">
-        <Link to="/candidate/jobs" className="flex items-center gap-2 text-text-secondary hover:text-text"><ArrowLeft size={16} /> Back to Search</Link>
+    <div className="max-w-5xl mx-auto space-y-6 relative">
+      <Button variant="ghost" onClick={() => navigate(-1)} leftIcon={<ArrowLeft size={16} />} className="mb-2">
+        Back
       </Button>
 
-      {/* Header Card */}
-      <Card className="bg-surface border border-border rounded-[8px] p-6 md:p-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="flex items-start gap-5">
-            <div className="w-16 h-16 rounded-xl bg-surface-alt flex items-center justify-center serif font-bold text-3xl text-primary border border-border shrink-0">
-              C
-            </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl serif font-bold text-text">Senior Frontend Engineer</h1>
-              <p className="text-lg text-text-secondary mt-1">CyberDyne Systems</p>
-              
-              <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-text-secondary mt-4">
-                <span className="flex items-center gap-1.5"><MapPin size={16} className="text-primary" /> San Francisco, CA (Hybrid)</span>
-                <span className="flex items-center gap-1.5"><DollarSign size={16} className="text-primary" /> $140,000 - $180,000</span>
-                <span className="flex items-center gap-1.5"><Briefcase size={16} className="text-gold" /> Full-time</span>
-                <span className="flex items-center gap-1.5"><Clock size={16} className="text-text-muted" /> Posted 2 days ago</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex flex-col gap-3 w-full md:w-auto mt-4 md:mt-0">
-            <Button 
-              onClick={() => setIsApplyModalOpen(true)}
-              className="w-full md:w-48 h-12 text-lg bg-gold hover:bg-gold-light text-[#201607]"
-            >
-              Easy Apply
-            </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 border border-border hover:border-primary"><Bookmark size={18} className="mr-2" /> Save</Button>
-              <Button variant="outline" className="border border-border hover:border-primary" size="icon"><Share2 size={18} /></Button>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Job Description */}
-          <Card className="bg-surface border border-border rounded-[8px] p-6 md:p-8 space-y-6">
-            <section>
-              <h2 className="text-xl serif font-bold text-text mb-4">About the Role</h2>
-              <div className="space-y-4 text-text-secondary leading-relaxed">
-                <p>We are looking for an experienced Senior Frontend Engineer to join our core product team. You will be responsible for building exceptional user experiences for our next-generation AI platform.</p>
-                <p>The ideal candidate is deeply passionate about web performance, accessibility, and modern React patterns. You will work closely with design, product, and backend teams to deliver high-quality features.</p>
+          {/* Header Card */}
+          <Card className="p-8">
+            <div className="flex flex-col sm:flex-row gap-6 items-start">
+              <Avatar 
+                src={job.company?.logo_url} 
+                alt={job.company?.name} 
+                fallback={job.company?.name?.[0]} 
+                className="w-20 h-20 rounded-xl"
+              />
+              <div className="flex-1">
+                <h1 className="text-3xl font-bold text-text mb-2">{job.title}</h1>
+                <div className="flex flex-wrap items-center gap-4 text-text-muted mb-4">
+                  <Link to={`/companies/${job.company?.id}`} className="flex items-center gap-1 font-medium text-primary hover:underline">
+                    <Building size={18} /> {job.company?.name}
+                  </Link>
+                  <span className="flex items-center gap-1"><MapPin size={16} /> {job.location || 'Remote'}</span>
+                  <span className="flex items-center gap-1"><Clock size={16} /> Posted {new Date(job.created_at).toLocaleDateString()}</span>
+                </div>
+                
+                <div className="flex flex-wrap gap-2 mb-6">
+                  {job.job_type && <Badge variant="secondary" className="flex items-center gap-1"><Briefcase size={14} /> {job.job_type}</Badge>}
+                  {job.work_mode && <Badge variant="secondary" className="flex items-center gap-1"><MapPin size={14} /> {job.work_mode}</Badge>}
+                  {job.experience_level && <Badge variant="secondary" className="flex items-center gap-1"><GraduationCap size={14} /> {job.experience_level}</Badge>}
+                  {(job.salary_min || job.salary_max) && (
+                    <Badge variant="outline" className="border-green-500/20 text-green-500 bg-green-500/5 flex items-center gap-1">
+                      <DollarSign size={14} /> 
+                      {job.salary_min ? `${(job.salary_min/1000).toFixed(0)}k` : ''} 
+                      {job.salary_min && job.salary_max ? ' - ' : ''} 
+                      {job.salary_max ? `${(job.salary_max/1000).toFixed(0)}k` : ''}
+                    </Badge>
+                  )}
+                </div>
               </div>
-            </section>
+            </div>
+          </Card>
 
-            <section>
-              <h2 className="text-xl serif font-bold text-text mb-4">Key Responsibilities</h2>
-              <ul className="space-y-3 text-text-secondary">
-                {[
-                  'Architect and implement complex UI components using React and Tailwind CSS.',
-                  'Collaborate with product managers and designers to iterate on features.',
-                  'Optimize application for maximum speed and scalability.',
-                  'Mentor junior developers and participate in code reviews.'
-                ].map((item, i) => (
-                  <li key={i} className="flex gap-3"><CheckCircle size={20} className="text-primary shrink-0" /> <span>{item}</span></li>
-                ))}
-              </ul>
-            </section>
-
-            <section>
-              <h2 className="text-xl serif font-bold text-text mb-4">Required Skills</h2>
-              <div className="flex flex-wrap gap-2">
-                {['React', 'TypeScript', 'Next.js', 'Tailwind CSS', 'GraphQL', 'Jest'].map(skill => (
-                  <Badge key={skill} className="bg-surface-alt text-text border border-border px-3 py-1.5 text-sm">{skill}</Badge>
-                ))}
+          {/* Details Card */}
+          <Card className="p-8 space-y-8">
+            <div>
+              <h2 className="text-xl font-bold text-text mb-4">About the Role</h2>
+              <div className="text-text-muted leading-relaxed whitespace-pre-wrap">
+                {job.description}
               </div>
-            </section>
+            </div>
+
+            {job.requirements && job.requirements.length > 0 && (
+              <div>
+                <h2 className="text-xl font-bold text-text mb-4">Requirements</h2>
+                <ul className="list-disc list-outside ml-5 space-y-2 text-text-muted">
+                  {job.requirements.map((req, idx) => (
+                    <li key={idx} className="pl-2">{req}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {job.responsibilities && job.responsibilities.length > 0 && (
+              <div>
+                <h2 className="text-xl font-bold text-text mb-4">Responsibilities</h2>
+                <ul className="list-disc list-outside ml-5 space-y-2 text-text-muted">
+                  {job.responsibilities.map((resp, idx) => (
+                    <li key={idx} className="pl-2">{resp}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {job.skills && job.skills.length > 0 && (
+              <div>
+                <h2 className="text-xl font-bold text-text mb-4">Required Skills</h2>
+                <div className="flex flex-wrap gap-2">
+                  {job.skills.map((skill, idx) => (
+                    <Badge key={idx} variant="outline">{skill}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Company Info inside Details for Mobile, but typically we have it separate. */}
+            <div className="pt-6 border-t border-border">
+              <h2 className="text-xl font-bold text-text mb-4">About {job.company?.name}</h2>
+              <p className="text-text-muted mb-4">{job.company?.description || 'No company description provided.'}</p>
+              {job.company?.website && (
+                <a href={job.company.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm font-medium">
+                  Visit Website
+                </a>
+              )}
+            </div>
           </Card>
         </div>
 
-        <div className="space-y-6">
-          {/* AI Match Card */}
-          <Card className="bg-surface border border-border rounded-[8px] p-6 relative overflow-hidden">
-            <h3 className="text-lg serif font-bold text-text mb-4">AI Match Analysis</h3>
-            <div className="flex items-center gap-4 mb-6">
-              <div className="relative w-20 h-20 flex items-center justify-center rounded-full border-4 border-surface-alt border-t-primary">
-                <span className="text-2xl font-bold mono text-text">92%</span>
-              </div>
-              <div>
-                <p className="font-semibold text-text">Excellent Match</p>
-                <p className="text-sm text-text-secondary">Based on your profile and skills</p>
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <div>
-                <div className="flex justify-between text-xs mb-1"><span className="text-text-secondary">Skills Match</span><span className="text-text mono">95%</span></div>
-                <div className="w-full bg-surface-alt rounded-full h-1.5"><div className="bg-primary h-1.5 rounded-full" style={{width: '95%'}}></div></div>
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-1"><span className="text-text-secondary">Experience Match</span><span className="text-text mono">88%</span></div>
-                <div className="w-full bg-surface-alt rounded-full h-1.5"><div className="bg-gold h-1.5 rounded-full" style={{width: '88%'}}></div></div>
-              </div>
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-border">
-              <h4 className="text-sm font-semibold text-text mb-3 flex items-center gap-2">
-                <AlertTriangle size={16} className="text-gold" /> Missing Skills
-              </h4>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-text-secondary">GraphQL</span>
-                  <Link to="/candidate/learning" className="text-primary hover:underline">Take Course</Link>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-text-secondary">Jest</span>
-                  <Link to="/candidate/learning" className="text-primary hover:underline">Take Course</Link>
-                </div>
-              </div>
-            </div>
-
-          </Card>
-
-          {/* Company Info */}
-          <Card className="bg-surface border border-border rounded-[8px] p-6">
-            <h3 className="text-lg serif font-bold text-text mb-4">About the Company</h3>
+        {/* Sticky Sidebar */}
+        <div className="space-y-6 lg:sticky lg:top-24">
+          <Card className="p-6">
             <div className="space-y-4">
-              <div className="flex items-center gap-3 text-sm text-text-secondary">
-                <Building size={18} className="text-text-muted" /> <span>Enterprise AI Solutions</span>
+              {applicationStatus ? (
+                <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-center space-y-2">
+                  <CheckCircle2 size={32} className="mx-auto text-green-500" />
+                  <h3 className="font-bold text-green-500">Applied Successfully</h3>
+                  <p className="text-sm text-green-500/80">
+                    Status: {applicationStatus.status}<br/>
+                    On {new Date(applicationStatus.created_at).toLocaleDateString()}
+                  </p>
+                  <Button variant="outline" className="w-full mt-4" as={Link} to="/candidate/applications">
+                    View Applications
+                  </Button>
+                </div>
+              ) : (
+                <Button 
+                  className="w-full py-6 text-lg" 
+                  onClick={() => user ? setShowApplyModal(true) : toast.error('Please login to apply')}
+                  disabled={job.status !== 'open'}
+                >
+                  {job.status === 'open' ? 'Apply Now' : 'Position Closed'}
+                </Button>
+              )}
+
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={handleToggleSave}
+                >
+                  <Bookmark size={18} className="mr-2" fill={isSaved ? 'currentColor' : 'none'} />
+                  {isSaved ? 'Saved' : 'Save'}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={handleShare}
+                >
+                  <Share2 size={18} className="mr-2" />
+                  Share
+                </Button>
               </div>
-              <div className="flex items-center gap-3 text-sm text-text-secondary">
-                <Users size={18} className="text-text-muted" /> <span>500-1000 Employees</span>
-              </div>
-              <div className="flex items-center gap-3 text-sm text-text-secondary">
-                <Globe size={18} className="text-text-muted" /> <a href="#" className="hover:text-primary transition-colors">cyberdyne.ai</a>
-              </div>
-              <p className="text-sm text-text-secondary mt-2">CyberDyne is a leading artificial intelligence company focused on building tools for the future of work.</p>
-              <Button variant="link" className="text-primary p-0 h-auto">View Company Profile &rarr;</Button>
             </div>
           </Card>
+
+          {similarJobs.length > 0 && (
+            <Card className="p-6">
+              <h3 className="font-bold text-text mb-4">Similar Jobs</h3>
+              <div className="space-y-4">
+                {similarJobs.map(sj => (
+                  <Link key={sj.id} to={`/candidate/jobs/${sj.id}`} className="group flex gap-3 p-2 -mx-2 rounded-lg hover:bg-surface-alt transition-colors">
+                    <Avatar src={sj.company?.logo_url} fallback={sj.company?.name?.[0]} className="w-10 h-10 rounded-md" />
+                    <div>
+                      <h4 className="font-medium text-text group-hover:text-primary transition-colors line-clamp-1">{sj.title}</h4>
+                      <p className="text-sm text-text-muted">{sj.company?.name}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
       </div>
 
-      {/* Easy Apply Modal */}
-      <AnimatePresence>
-        {isApplyModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg/80 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-surface border border-border w-full max-w-lg rounded-[8px] shadow-lg overflow-hidden"
-            >
-              <div className="p-6 border-b border-border flex justify-between items-center bg-surface-alt/50">
-                <h3 className="serif text-xl font-bold text-text">Easy Apply</h3>
-                <button onClick={() => setIsApplyModalOpen(false)} className="text-text-muted hover:text-text transition-colors">
-                  <X size={20} />
-                </button>
+      {/* Apply Modal */}
+      {showApplyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <Card className="w-full max-w-lg p-6 animate-in fade-in zoom-in-95 duration-200">
+            <h2 className="text-2xl font-bold text-text mb-2">Apply to {job.company?.name}</h2>
+            <p className="text-text-muted mb-6">Position: <span className="font-medium text-text">{job.title}</span></p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-text mb-1">Cover Letter (Optional)</label>
+                <textarea 
+                  className="w-full min-h-[150px] p-3 rounded-lg border border-border bg-surface-alt text-text focus:ring-2 focus:ring-primary focus:border-transparent outline-none resize-y"
+                  placeholder="Explain why you are a good fit for this role..."
+                  value={coverLetter}
+                  onChange={(e) => setCoverLetter(e.target.value)}
+                />
               </div>
-              <form onSubmit={handleApply} className="p-6 space-y-6">
-                <div>
-                  <h4 className="font-semibold text-text mb-2">Review Profile</h4>
-                  <div className="bg-bg border border-border p-4 rounded-[6px]">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-semibold text-text">Alex Morgan</p>
-                        <p className="text-sm text-text-secondary">alex@demo.webloom.ai</p>
-                      </div>
-                      <Badge className="bg-primary/10 text-primary border-primary/20">All-Star Profile</Badge>
-                    </div>
-                    <Link to="/candidate/profile" className="text-xs text-primary hover:underline">Edit Profile</Link>
-                  </div>
-                </div>
+              <p className="text-sm text-text-muted">
+                Your profile information and resume will be automatically included with this application.
+              </p>
+            </div>
 
-                <div>
-                  <h4 className="font-semibold text-text mb-2">Resume</h4>
-                  <div className="bg-bg border border-border p-4 rounded-[6px] flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-surface-alt flex items-center justify-center text-primary">
-                        <CheckCircle size={16} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-text">Alex_Morgan_Resume_2026.pdf</p>
-                        <p className="text-xs text-text-muted">Uploaded 2 days ago</p>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" type="button" className="text-xs">Replace</Button>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold text-text mb-2">Cover Letter (Optional)</h4>
-                  <textarea 
-                    className="w-full bg-bg border border-border rounded-[6px] p-3 text-sm text-text focus:outline-none focus:border-primary transition-colors min-h-[100px]"
-                    placeholder="Write a short message to the hiring manager..."
-                  ></textarea>
-                </div>
-
-                <div className="pt-4 flex justify-end gap-3 border-t border-border">
-                  <Button type="button" variant="ghost" onClick={() => setIsApplyModalOpen(false)}>Cancel</Button>
-                  <Button type="submit" disabled={isSubmitting} className="bg-gold hover:bg-gold-light text-[#201607] min-w-[120px]">
-                    {isSubmitting ? <span className="animate-spin w-4 h-4 border-2 border-[#201607]/30 border-t-[#201607] rounded-full" /> : 'Submit Application'}
-                  </Button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-    </motion.div>
+            <div className="flex justify-end gap-3 mt-8">
+              <Button variant="ghost" onClick={() => setShowApplyModal(false)} disabled={applying}>
+                Cancel
+              </Button>
+              <Button onClick={handleApply} isLoading={applying}>
+                Submit Application
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
   );
 }

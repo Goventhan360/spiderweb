@@ -33,6 +33,7 @@ const RecruiterLogin = lazy(() => import('@/pages/auth/RecruiterLogin'));
 const AdminLogin = lazy(() => import('@/pages/auth/AdminLogin'));
 const Register = lazy(() => import('@/pages/auth/Register'));
 const ForgotPassword = lazy(() => import('@/pages/auth/ForgotPassword'));
+const AuthCallback = lazy(() => import('@/pages/auth/AuthCallback'));
 
 const CandidateDashboard = lazy(() => import('@/pages/candidate/CandidateDashboard'));
 const Profile = lazy(() => import('@/pages/candidate/Profile'));
@@ -126,6 +127,9 @@ function AppRoutes() {
           <Route path="/company/:id" element={<CompanyPage />} />
           <Route path="/contact" element={<Contact />} />
         </Route>
+
+        {/* Auth Callback — Google OAuth return handler, must be public */}
+        <Route path="/auth/callback" element={<AuthCallback />} />
 
         {/* Auth Routes */}
         <Route element={<AuthLayout />}>

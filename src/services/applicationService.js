@@ -1,39 +1,91 @@
-import { isConfigured } from '@/utils/helpers';
 import { supabase } from '@/supabase/client';
 
-const DEMO_APPLICATIONS = [
-  { id: '1', job_id: '1', candidate_id: 'demo-user-123', status: 'pending', notes: 'Initial submission', created_at: new Date().toISOString() }
-];
-
 export const applicationService = {
-  async applyToJob(jobId, candidateId, data) {
-    if (!isConfigured()) return { data: { id: Date.now().toString(), job_id: jobId, candidate_id: candidateId, status: 'pending', ...data }, error: null };
-    const { data: result, error } = await supabase.from('applications').insert([{ job_id: jobId, candidate_id: candidateId, ...data }]).select().single();
-    return { data: result, error };
-  },
-  async getApplicationsByCandidate(candidateId) {
-    if (!isConfigured()) return { data: DEMO_APPLICATIONS, error: null };
-    const { data, error } = await supabase.from('applications').select('*, job:jobs(*)').eq('candidate_id', candidateId);
+  async apply({ job_id, candidate_id, cover_letter }) {
+    const { data, error } = await supabase
+      .from('applications')
+      .insert({ job_id, candidate_id, cover_letter })
+      .select()
+      .single();
     return { data, error };
   },
-  async getApplicationsByJob(jobId) {
-    if (!isConfigured()) return { data: DEMO_APPLICATIONS, error: null };
-    const { data, error } = await supabase.from('applications').select('*, candidate:profiles(*)').eq('job_id', jobId);
+
+  async getByCandidate(candidateId) {
+    const { data, error } = await supabase
+      .from('applications')
+      .select('*, job:jobs(*, company:companies(*))')
+      .eq('candidate_id', candidateId)
+      .order('created_at', { ascending: false });
     return { data, error };
   },
-  async updateApplicationStatus(applicationId, status, notes) {
-    if (!isConfigured()) return { data: { id: applicationId, status, notes }, error: null };
-    const { data, error } = await supabase.from('applications').update({ status, notes }).eq('id', applicationId).select().single();
+
+  async getByJob(jobId) {
+    const { data, error } = await supabase
+      .from('applications')
+      .select('*, candidate:profiles(*)')
+      .eq('job_id', jobId)
+      .order('created_at', { ascending: false });
     return { data, error };
   },
-  async withdrawApplication(applicationId) {
-    if (!isConfigured()) return { error: null };
-    const { error } = await supabase.from('applications').delete().eq('id', applicationId);
+
+  async getByRecruiter(recruiterId) {
+    const { data, error } = await supabase
+      .from('applications')
+      .select('*, job:jobs!inner(*), candidate:profiles(*)')
+      .eq('job.recruiter_id', recruiterId)
+      .order('created_at', { ascending: false });
+    return { data, error };
+  },
+
+  async updateStatus(applicationId, status) {
+    const { data, error } = await supabase
+      .from('applications')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', applicationId)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async getStats(userId, role) {
+    try {
+      let query = supabase.from('applications').select('status');
+      
+      if (role === 'recruiter') {
+        query = query.eq('job.recruiter_id', userId).innerJoin('jobs', 'job_id', 'id');
+      } else {
+        query = query.eq('candidate_id', userId);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      
+      const stats = { total: 0, pending: 0, interviews: 0, offers: 0 };
+      data.forEach(app => {
+        stats.total++;
+        if (app.status === 'Applied' || app.status === 'Screening') stats.pending++;
+        if (app.status === 'Interview') stats.interviews++;
+        if (app.status === 'Offered') stats.offers++;
+      });
+      return { data: stats, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async withdraw(applicationId, candidateId) {
+    const { error } = await supabase
+      .from('applications')
+      .delete()
+      .match({ id: applicationId, candidate_id: candidateId });
     return { error };
   },
-  async getApplicationDetails(applicationId) {
-    if (!isConfigured()) return { data: DEMO_APPLICATIONS[0], error: null };
-    const { data, error } = await supabase.from('applications').select('*, job:jobs(*), candidate:profiles(*)').eq('id', applicationId).single();
-    return { data, error };
+
+  async hasApplied(jobId, candidateId) {
+    const { count, error } = await supabase
+      .from('applications')
+      .select('id', { count: 'exact', head: true })
+      .match({ job_id: jobId, candidate_id: candidateId });
+    return { data: count > 0, error };
   }
 };

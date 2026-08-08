@@ -1,112 +1,240 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Bell, Briefcase, MessageSquare, Star, Zap, CheckCircle2, Circle } from 'lucide-react';
-import Card from '@/components/ui/Card';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Bell, Briefcase, MessageSquare, Star, CheckCircle, ExternalLink, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import Card from '@/components/ui/Card';
+import Skeleton from '@/components/ui/Skeleton';
 import EmptyState from '@/components/ui/EmptyState';
-import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Notifications() {
-  const [filter, setFilter] = useState('All');
-  
-  const pageVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all'); // all, unread
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+      
+      // Set up real-time subscription
+      const channel = supabase
+        .channel(`notifications:${user.id}`)
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        }, (payload) => {
+          setNotifications(prev => [payload.new, ...prev]);
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user]);
+
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setNotifications(data || []);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      toast.error('Failed to load notifications');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const initialNotifications = [
-    { id: 1, type: 'interview', title: 'Interview Invitation', message: 'CyberDyne Systems wants to schedule a technical interview.', time: '2 hours ago', read: false, icon: <Briefcase size={20} className="text-primary" /> },
-    { id: 2, type: 'message', title: 'New Message', message: 'Sarah Connor sent you a message.', time: '3 hours ago', read: false, icon: <MessageSquare size={20} className="text-gold" /> },
-    { id: 3, type: 'match', title: 'High AI Match', message: 'We found a new job that matches 95% of your skills.', time: 'Yesterday', read: true, icon: <Star size={20} className="text-primary" /> },
-    { id: 4, type: 'system', title: 'Profile Tip', message: 'Add 2 more projects to boost your profile score by 10%.', time: 'Yesterday', read: true, icon: <Zap size={20} className="text-gold" /> },
-    { id: 5, type: 'application', title: 'Application Update', message: 'Your application for Senior Developer at OmniCorp was viewed.', time: '2 days ago', read: true, icon: <CheckCircle2 size={20} className="text-primary" /> },
-  ];
-
-  const [notifications, setNotifications] = useState(initialNotifications);
-
-  const filteredNotifications = filter === 'Unread' ? notifications.filter(n => !n.read) : notifications;
-
-  const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  const markAsRead = async (id, link = null) => {
+    try {
+      if (id === 'all') {
+        await supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .eq('user_id', user.id)
+          .eq('is_read', false);
+          
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+        toast.success('All marked as read');
+      } else {
+        await supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .eq('id', id);
+          
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+        if (link) {
+          window.location.href = link;
+        }
+      }
+    } catch (error) {
+      console.error('Error marking as read:', error);
+    }
   };
 
-  const toggleRead = (id) => {
-    setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+  const deleteNotification = async (e, id) => {
+    e.stopPropagation();
+    try {
+      await supabase.from('notifications').delete().eq('id', id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (error) {
+      toast.error('Failed to delete notification');
+    }
   };
+
+  const getIcon = (type) => {
+    switch (type?.toLowerCase()) {
+      case 'application': return <Briefcase className="text-blue-500" />;
+      case 'message': return <MessageSquare className="text-green-500" />;
+      case 'recommendation': return <Star className="text-yellow-500" />;
+      case 'interview': return <CheckCircle className="text-purple-500" />;
+      default: return <Bell className="text-text-muted" />;
+    }
+  };
+
+  const getIconBg = (type) => {
+    switch (type?.toLowerCase()) {
+      case 'application': return 'bg-blue-500/10 border-blue-500/20';
+      case 'message': return 'bg-green-500/10 border-green-500/20';
+      case 'recommendation': return 'bg-yellow-500/10 border-yellow-500/20';
+      case 'interview': return 'bg-purple-500/10 border-purple-500/20';
+      default: return 'bg-surface-alt border-border';
+    }
+  };
+
+  const filteredNotifications = filter === 'unread' 
+    ? notifications.filter(n => !n.is_read) 
+    : notifications;
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
 
   return (
-    <motion.div variants={pageVariants} initial="hidden" animate="visible" className="p-4 md:p-6 max-w-4xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl serif font-bold text-text flex items-center gap-3">
-            <Bell className="text-gold" /> Notifications
-          </h1>
-        </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="bg-surface border border-border p-1 rounded-[8px] flex">
-            <button 
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === 'All' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text'}`}
-              onClick={() => setFilter('All')}
-            >All</button>
-            <button 
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === 'Unread' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text'}`}
-              onClick={() => setFilter('Unread')}
-            >Unread</button>
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex justify-between items-center bg-surface p-6 rounded-xl border border-border">
+        <div className="flex items-center gap-4">
+          <div className="bg-primary/10 p-3 rounded-full">
+            <Bell size={24} className="text-primary" />
           </div>
-          <Button variant="outline" size="sm" onClick={markAllRead} className="whitespace-nowrap border border-border hover:border-primary">Mark all read</Button>
+          <div>
+            <h1 className="text-2xl font-bold text-text">Notifications</h1>
+            <p className="text-text-muted text-sm">You have {unreadCount} unread messages</p>
+          </div>
         </div>
+        
+        {unreadCount > 0 && (
+          <Button variant="outline" size="sm" onClick={() => markAsRead('all')}>
+            Mark all as read
+          </Button>
+        )}
       </div>
 
-      <Card className="bg-surface border border-border rounded-[8px] overflow-hidden min-h-[400px]">
-        {filteredNotifications.length === 0 ? (
-          <div className="p-12">
-            <EmptyState 
-              icon={<Bell size={48} className="text-text-muted" />}
-              title="All caught up!"
-              description="You have no new notifications at the moment."
-            />
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {filteredNotifications.map((notif) => (
-              <div 
-                key={notif.id} 
-                className={`p-5 flex gap-4 transition-colors hover:bg-surface-alt ${!notif.read ? 'bg-primary/5' : ''}`}
-              >
-                <div className={`mt-1 w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${!notif.read ? 'bg-surface border-primary' : 'bg-surface-alt border-border'}`}>
-                  {notif.icon}
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start mb-1">
-                    <h4 className={`text-base ${!notif.read ? 'font-bold text-text' : 'font-medium text-text-secondary'}`}>
-                      {notif.title}
-                    </h4>
-                    <span className="text-xs text-text-muted whitespace-nowrap ml-4">{notif.time}</span>
-                  </div>
-                  <p className={`text-sm ${!notif.read ? 'text-text-secondary' : 'text-text-muted'}`}>{notif.message}</p>
-                  
-                  {/* Action link based on type */}
-                  {notif.type === 'interview' && (
-                    <Link to="/candidate/applications" className="text-xs text-primary font-medium hover:underline mt-2 inline-block">View Details &rarr;</Link>
-                  )}
-                  {notif.type === 'message' && (
-                    <Link to="/candidate/messages" className="text-xs text-gold font-medium hover:underline mt-2 inline-block">Reply &rarr;</Link>
-                  )}
-                  {notif.type === 'match' && (
-                    <Link to="/candidate/jobs" className="text-xs text-primary font-medium hover:underline mt-2 inline-block">View Job &rarr;</Link>
-                  )}
-                </div>
-                <button 
-                  onClick={() => toggleRead(notif.id)}
-                  className="mt-1 text-text-muted hover:text-primary transition-colors shrink-0"
-                >
-                  {!notif.read ? <Circle size={16} className="fill-primary text-primary" /> : <Circle size={16} />}
-                </button>
+      <div className="flex gap-2">
+        <button 
+          onClick={() => setFilter('all')}
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${filter === 'all' ? 'bg-primary text-primary-content' : 'bg-surface text-text-muted hover:text-text'}`}
+        >
+          All Notifications
+        </button>
+        <button 
+          onClick={() => setFilter('unread')}
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${filter === 'unread' ? 'bg-primary text-primary-content' : 'bg-surface text-text-muted hover:text-text'}`}
+        >
+          Unread {unreadCount > 0 && `(${unreadCount})`}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="space-y-4">
+          {[...Array(5)].map((_, i) => (
+            <Card key={i} className="p-4 flex gap-4">
+              <Skeleton className="w-12 h-12 rounded-full" />
+              <div className="flex-1 space-y-2 py-2">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-3 w-2/3" />
               </div>
+            </Card>
+          ))}
+        </div>
+      ) : filteredNotifications.length > 0 ? (
+        <div className="space-y-3">
+          <AnimatePresence>
+            {filteredNotifications.map((notification) => (
+              <motion.div
+                key={notification.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                layout
+              >
+                <div 
+                  onClick={() => markAsRead(notification.id, notification.link)}
+                  className={`p-4 rounded-xl border flex gap-4 transition-all cursor-pointer group
+                    ${!notification.is_read 
+                      ? 'bg-surface border-primary/30 shadow-[0_0_10px_rgba(var(--color-primary-rgb),0.1)]' 
+                      : 'bg-surface-alt/50 border-border hover:bg-surface'
+                    }
+                  `}
+                >
+                  <div className={`w-12 h-12 rounded-full shrink-0 flex items-center justify-center border ${getIconBg(notification.type)}`}>
+                    {getIcon(notification.type)}
+                  </div>
+                  
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <div className="flex justify-between items-start mb-1">
+                      <h3 className={`text-sm font-semibold truncate ${!notification.is_read ? 'text-text' : 'text-text-muted'}`}>
+                        {notification.title}
+                      </h3>
+                      <span className="text-xs text-text-muted shrink-0 ml-2">
+                        {new Date(notification.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-text-muted line-clamp-2">
+                      {notification.message}
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {notification.link && (
+                      <button className="p-2 text-text-muted hover:text-primary bg-surface rounded-lg border border-border" title="Open Link">
+                        <ExternalLink size={16} />
+                      </button>
+                    )}
+                    <button 
+                      onClick={(e) => deleteNotification(e, notification.id)} 
+                      className="p-2 text-text-muted hover:text-red-500 bg-surface rounded-lg border border-border"
+                      title="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  
+                  {!notification.is_read && (
+                    <div className="absolute top-1/2 -translate-y-1/2 left-2 w-2 h-2 bg-primary rounded-full"></div>
+                  )}
+                </div>
+              </motion.div>
             ))}
-          </div>
-        )}
-      </Card>
-    </motion.div>
+          </AnimatePresence>
+        </div>
+      ) : (
+        <EmptyState 
+          icon={<Bell size={48} className="text-text-muted/50" />}
+          title="All caught up!"
+          description={filter === 'unread' ? "You don't have any unread notifications." : "You don't have any notifications yet."}
+        />
+      )}
+    </div>
   );
 }
