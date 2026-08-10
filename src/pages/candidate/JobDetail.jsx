@@ -11,8 +11,61 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Avatar from '@/components/ui/Avatar';
 import Skeleton from '@/components/ui/Skeleton';
-import EmptyState from '@/components/ui/EmptyState';
 import toast from 'react-hot-toast';
+
+const FALLBACK_DEMO_JOBS = [
+  { 
+    id: '1', 
+    title: 'Senior Frontend Developer', 
+    location: 'Remote', 
+    salary_min: 120000, 
+    salary_max: 160000, 
+    job_type: 'Full-time', 
+    work_mode: 'Remote', 
+    experience_level: 'Senior', 
+    description: 'We are looking for a Senior Frontend Developer proficient in React, TypeScript, and Tailwind CSS to join our core product team.', 
+    requirements: ['5+ years React experience', 'Strong TypeScript skills', 'Experience with modern CSS/Tailwind'],
+    responsibilities: ['Build scalable UI components', 'Optimize application performance', 'Collaborate with product managers'],
+    benefits: ['Full health/dental', 'Unlimited PTO', 'Remote stipend', '401(k) matching'],
+    skills: ['React', 'TypeScript', 'Tailwind CSS', 'Next.js'],
+    status: 'active', 
+    company: { name: 'NexaTech AI', logo_url: null, industry: 'AI & Software', size: '50-200' }
+  },
+  { 
+    id: '2', 
+    title: 'Full Stack Engineer', 
+    location: 'San Francisco, CA', 
+    salary_min: 130000, 
+    salary_max: 175000, 
+    job_type: 'Full-time', 
+    work_mode: 'Hybrid', 
+    experience_level: 'Mid-Level', 
+    description: 'Join CloudSphere to build next-generation cloud infrastructure management tools.', 
+    requirements: ['3+ years Node.js and React', 'PostgreSQL database design', 'AWS / Cloud deployment experience'],
+    responsibilities: ['Design REST and GraphQL APIs', 'Maintain CI/CD pipelines', 'Participate in code reviews'],
+    benefits: ['Competitive equity', 'Flexible work hours', 'Learning & development budget'],
+    skills: ['Node.js', 'React', 'PostgreSQL', 'AWS', 'Docker'],
+    status: 'active', 
+    company: { name: 'CloudSphere', logo_url: null, industry: 'Cloud Infrastructure', size: '200-500' }
+  },
+  { 
+    id: '3', 
+    title: 'UI/UX Designer', 
+    location: 'New York, NY', 
+    salary_min: 90000, 
+    salary_max: 130000, 
+    job_type: 'Contract', 
+    work_mode: 'On-site', 
+    experience_level: 'Mid-Level', 
+    description: 'Craft beautiful, intuitive design systems and user interfaces for high-growth tech companies.', 
+    requirements: ['Figma mastery', 'Strong portfolio of web/mobile products', 'User research experience'],
+    responsibilities: ['Create wireframes and prototypes', 'Develop design tokens and UI components', 'Conduct usability testing'],
+    benefits: ['Daily catered lunches', 'Transit pass', 'Latest MacBook Pro'],
+    skills: ['Figma', 'UI Design', 'UX Research', 'Design Systems'],
+    status: 'active', 
+    company: { name: 'DataForge Design', logo_url: null, industry: 'Design Agency', size: '11-50' }
+  }
+];
 
 export default function JobDetail() {
   const { id } = useParams();
@@ -44,6 +97,16 @@ export default function JobDetail() {
       setLoading(true);
       setError(null);
 
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+      if (!isUuid) {
+        const demoMatch = FALLBACK_DEMO_JOBS.find(j => j.id === id) || FALLBACK_DEMO_JOBS[0];
+        setJob(demoMatch);
+        setSimilarJobs(FALLBACK_DEMO_JOBS.filter(j => j.id !== demoMatch.id));
+        setLoading(false);
+        return;
+      }
+
       // Fetch job details
       const { data: jobData, error: jobError } = await supabase
         .from('jobs')
@@ -52,34 +115,42 @@ export default function JobDetail() {
           company:companies (*)
         `)
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-      if (jobError) throw jobError;
+      if (jobError || !jobData) {
+        const demoMatch = FALLBACK_DEMO_JOBS.find(j => j.id === id) || FALLBACK_DEMO_JOBS[0];
+        setJob(demoMatch);
+        setSimilarJobs(FALLBACK_DEMO_JOBS.filter(j => j.id !== demoMatch.id));
+        return;
+      }
+
       setJob(jobData);
 
-      // Track view (if we had a view count column)
-      // await supabase.rpc('increment_job_view', { job_id: id });
-
-      // Fetch similar jobs (naive matching on company_id or skills/job_type)
+      // Fetch similar jobs
       const { data: similar } = await supabase
         .from('jobs')
         .select('*, company:companies(name, logo_url)')
         .eq('status', 'active')
         .neq('id', id)
-        .or(`job_type.eq.${jobData.job_type},company_id.eq.${jobData.company_id}`)
         .limit(3);
       
       setSimilarJobs(similar || []);
 
     } catch (err) {
       console.error('Error fetching job details:', err);
-      setError('Job not found or an error occurred.');
+      const demoMatch = FALLBACK_DEMO_JOBS[0];
+      setJob(demoMatch);
+      setSimilarJobs(FALLBACK_DEMO_JOBS.slice(1));
     } finally {
       setLoading(false);
     }
   };
 
   const checkUserStatus = async () => {
+    if (!user || user.id?.includes('demo')) return;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (!isUuid) return;
+
     try {
       // Check if saved
       const { data: savedData } = await supabase
@@ -87,7 +158,7 @@ export default function JobDetail() {
         .select('id')
         .eq('user_id', user.id)
         .eq('job_id', id)
-        .single();
+        .maybeSingle();
       
       if (savedData) setIsSaved(true);
 
@@ -97,7 +168,7 @@ export default function JobDetail() {
         .select('status, created_at')
         .eq('candidate_id', user.id)
         .eq('job_id', id)
-        .single();
+        .maybeSingle();
 
       if (appData) setApplicationStatus(appData);
 

@@ -75,7 +75,7 @@ const Select = forwardRef(
         <div className="relative">
           {LeftIcon && (
             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted z-10 pointer-events-none">
-              <LeftIcon className="h-4 w-4" />
+              {typeof LeftIcon === 'function' ? <LeftIcon className="h-4 w-4" /> : LeftIcon}
             </div>
           )}
           

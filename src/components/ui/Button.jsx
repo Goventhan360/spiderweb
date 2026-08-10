@@ -59,6 +59,7 @@ const Button = forwardRef(
       type = 'button',
       fullWidth = false,
       as: Tag,
+      asChild,
       ...props
     },
     ref

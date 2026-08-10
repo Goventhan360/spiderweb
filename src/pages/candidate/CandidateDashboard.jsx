@@ -35,6 +35,40 @@ export default function CandidateDashboard() {
     if (!user) return;
     try {
       setLoading(true);
+
+      if (user.id?.includes('demo')) {
+        setStats({
+          applicationsSent: 12,
+          interviewsScheduled: 2,
+          savedJobs: 5,
+          profileScore: profile?.profile_score || 85
+        });
+        setRecentApplications([
+          {
+            id: 'demo-app-1',
+            status: 'Interview',
+            created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+            job: { title: 'Senior Frontend Developer', company: { name: 'NexaTech AI' } }
+          },
+          {
+            id: 'demo-app-2',
+            status: 'Applied',
+            created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+            job: { title: 'Full Stack Engineer', company: { name: 'CloudSphere' } }
+          }
+        ]);
+        
+        // Fetch Recommended Jobs from Supabase or Fallback
+        const { data: jobsData } = await supabase
+          .from('jobs')
+          .select('*, company:companies(name, logo_url)')
+          .eq('status', 'active')
+          .limit(4);
+
+        setRecommendedJobs(jobsData || []);
+        setLoading(false);
+        return;
+      }
       
       // Fetch Applications Count
       const { count: appsCount } = await supabase

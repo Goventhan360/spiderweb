@@ -25,6 +25,41 @@ export default function SavedJobs() {
   const fetchSavedJobs = async () => {
     try {
       setLoading(true);
+
+      if (!user?.id || user.id.includes('demo')) {
+        setSavedJobs([
+          {
+            id: 'demo-saved-1',
+            created_at: new Date().toISOString(),
+            job: {
+              id: '1',
+              title: 'Senior Frontend Developer',
+              location: 'Remote',
+              salary_min: 120000,
+              salary_max: 160000,
+              work_mode: 'Remote',
+              job_type: 'Full-time',
+              company: { name: 'NexaTech AI', logo_url: null }
+            }
+          },
+          {
+            id: 'demo-saved-2',
+            created_at: new Date(Date.now() - 86400000).toISOString(),
+            job: {
+              id: '2',
+              title: 'Full Stack Engineer',
+              location: 'San Francisco, CA',
+              salary_min: 130000,
+              salary_max: 175000,
+              work_mode: 'Hybrid',
+              job_type: 'Full-time',
+              company: { name: 'CloudSphere', logo_url: null }
+            }
+          }
+        ]);
+        setLoading(false);
+        return;
+      }
       
       let query = supabase
         .from('saved_jobs')
@@ -38,7 +73,11 @@ export default function SavedJobs() {
         .eq('user_id', user.id);
 
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) {
+        setSavedJobs([]);
+        setLoading(false);
+        return;
+      }
 
       let formattedJobs = data || [];
 

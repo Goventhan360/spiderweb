@@ -43,7 +43,7 @@ export default function HomeFeed() {
   }, [search, jobType, workMode]);
 
   const fetchSavedJobs = async () => {
-    if (!user) return;
+    if (!user || user.id?.includes('demo')) return;
     try {
       const { data } = await supabase
         .from('saved_jobs')

@@ -1,27 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 
+/**
+ * Hook forcing permanent dark theme across the application
+ */
 export function useTheme() {
-  const [theme, setTheme] = useState(() => {
-    // Check local storage or system preference on initial load
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('webloom-theme');
-      if (saved) return saved;
-      if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        return 'dark';
-      }
-    }
-    return 'light';
-  });
-
   useEffect(() => {
-    // Apply the theme to the HTML tag
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('webloom-theme', theme);
-  }, [theme]);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.classList.add('dark');
+    localStorage.setItem('webloom-theme', 'dark');
+  }, []);
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  return { 
+    theme: 'dark', 
+    toggleTheme: () => {} 
   };
-
-  return { theme, toggleTheme };
 }

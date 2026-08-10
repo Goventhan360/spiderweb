@@ -23,14 +23,29 @@ export default function CompanyProfile() {
 
   const fetchCompany = async () => {
     try {
+      if (!user?.id || user.id.includes('demo')) {
+        setCompanyId('demo-company-1');
+        reset({
+          name: 'NexaTech AI',
+          logo_url: null,
+          industry: 'AI & Software',
+          size: '50-200',
+          location: 'San Francisco, CA',
+          website: 'https://nexatech.ai',
+          description: 'Building intelligent career solutions and next-generation Web3 AI matching systems.',
+          culture: 'Innovative, fast-paced, collaborative, and human-centric.',
+        });
+        setBenefits(['Health Insurance', 'Unlimited PTO', '401k Matching', 'Remote Stipend']);
+        setTechStack(['React', 'Node.js', 'Python', 'PostgreSQL', 'AWS']);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('companies')
         .select('*')
         .eq('owner_id', user.id)
-        .single();
+        .maybeSingle();
         
-      if (error && error.code !== 'PGRST116') throw error; // Not found is ok
-
       if (data) {
         setCompanyId(data.id);
         reset({
@@ -48,7 +63,6 @@ export default function CompanyProfile() {
       }
     } catch (err) {
       console.error(err);
-      toast.error('Failed to load company profile');
     }
   };
 

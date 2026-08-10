@@ -43,6 +43,10 @@ export default function AuthCallback() {
         const userId = activeSession.user.id;
         const userMeta = activeSession.user.user_metadata;
 
+        // Read intended role if user registered via Register page
+        const intendedRole = localStorage.getItem('oauth_intended_role');
+        if (intendedRole) localStorage.removeItem('oauth_intended_role');
+
         // Poll for profile (created by DB trigger) — up to 5 attempts
         let profile = null;
         for (let i = 0; i < 5; i++) {
@@ -64,7 +68,7 @@ export default function AuthCallback() {
           const newProfile = {
             id: userId,
             full_name: userMeta?.full_name || userMeta?.name || userMeta?.email?.split('@')[0] || 'User',
-            role: userMeta?.role || 'candidate',
+            role: intendedRole || userMeta?.role || 'candidate',
             avatar_url: userMeta?.avatar_url || userMeta?.picture || null,
           };
           const { data: created } = await supabase

@@ -27,6 +27,49 @@ export default function Applications() {
   const fetchApplications = async () => {
     try {
       setLoading(true);
+      if (!user?.id || user.id.includes('demo')) {
+        setApplications([
+          {
+            id: 'demo-app-1',
+            status: 'Interview',
+            created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+            job: {
+              id: '1',
+              title: 'Senior Frontend Developer',
+              location: 'Remote',
+              work_mode: 'Remote',
+              company: { name: 'NexaTech AI', logo_url: null }
+            }
+          },
+          {
+            id: 'demo-app-2',
+            status: 'Applied',
+            created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+            job: {
+              id: '2',
+              title: 'Full Stack Engineer',
+              location: 'San Francisco, CA',
+              work_mode: 'Hybrid',
+              company: { name: 'CloudSphere', logo_url: null }
+            }
+          },
+          {
+            id: 'demo-app-3',
+            status: 'Screening',
+            created_at: new Date(Date.now() - 12 * 86400000).toISOString(),
+            job: {
+              id: '3',
+              title: 'React Specialist',
+              location: 'New York, NY',
+              work_mode: 'On-site',
+              company: { name: 'DataForge', logo_url: null }
+            }
+          }
+        ]);
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('applications')
         .select(`
@@ -39,11 +82,14 @@ export default function Applications() {
         .eq('candidate_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setApplications(data || []);
+      if (error) {
+        setApplications([]);
+      } else {
+        setApplications(data || []);
+      }
     } catch (error) {
       console.error('Error fetching applications:', error);
-      toast.error('Failed to load applications');
+      setApplications([]);
     } finally {
       setLoading(false);
     }
