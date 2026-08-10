@@ -61,13 +61,7 @@ export default function Login() {
       toast.error(error.message || 'Google sign-in failed.');
       setIsGoogleLoading(false);
     }
-    // On success, Supabase redirects the browser — onGoogleAuthComplete handles return
-  };
-
-  const onGoogleAuthComplete = () => {
-    setIsGoogleLoading(false);
-    toast.success('Signed in with Google successfully!');
-    navigate('/candidate/feed');
+    // On success, browser is redirected to Google — AuthCallback handles the return
   };
 
 
@@ -75,7 +69,14 @@ export default function Login() {
     <>
       <AnimatePresence>
         {isGoogleLoading && (
-          <GoogleAuthLoading onComplete={onGoogleAuthComplete} />
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-dark/80 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <GoogleAuthLoading />
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -137,6 +138,7 @@ export default function Login() {
                 {...register('email')}
                 type="email"
                 placeholder="Email Address"
+                autoComplete="email"
                 className={cn(
                   "w-full bg-surface border rounded-[6px] py-[10px] pl-[42px] pr-[16px] text-[14.5px] text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors",
                   errors.email ? "border-danger" : "border-border"
@@ -153,6 +155,7 @@ export default function Login() {
                 {...register('password')}
                 type="password"
                 placeholder="Password"
+                autoComplete="current-password"
                 className={cn(
                   "w-full bg-surface border rounded-[6px] py-[10px] pl-[42px] pr-[16px] text-[14.5px] text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors",
                   errors.password ? "border-danger" : "border-border"
@@ -190,7 +193,8 @@ export default function Login() {
         <button 
           type="button"
           onClick={handleGoogleSignIn}
-          className="w-full mt-[24px] bg-surface hover:bg-surface-alt border border-border text-text font-medium py-[11px] rounded-[6px] transition-colors flex items-center justify-center gap-[10px] text-[14.5px] cursor-pointer hover:border-primary"
+          disabled={isGoogleLoading}
+          className="w-full mt-[24px] bg-surface hover:bg-surface-alt border border-border text-text font-medium py-[11px] rounded-[6px] transition-colors flex items-center justify-center gap-[10px] text-[14.5px] cursor-pointer hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />

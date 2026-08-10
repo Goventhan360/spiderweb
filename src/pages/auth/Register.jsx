@@ -21,7 +21,7 @@ const registerSchema = z.object({
 });
 
 export default function Register() {
-  const { signUp, signInWithGoogle, switchRole } = useAuth();
+  const { signUp, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -44,29 +44,35 @@ export default function Register() {
     if (error) {
       toast.error(error.message || 'Failed to register');
     } else {
-      toast.success('Registration successful! Please check your email.');
+      toast.success('Account created! Please check your email to confirm.');
       navigate('/login');
     }
   };
 
   const handleGoogleSignIn = async () => {
+    // Store desired role so AuthCallback can set it after OAuth
+    localStorage.setItem('oauth_intended_role', role);
     setIsGoogleLoading(true);
-    await signInWithGoogle();
-  };
-
-  const onGoogleAuthComplete = () => {
-    setIsGoogleLoading(false);
-    switchRole(role);
-    toast.success('Registered & Signed in with Google successfully!');
-    if (role === 'recruiter') navigate('/recruiter/dashboard');
-    else navigate('/candidate/feed');
+    const { error } = await signInWithGoogle();
+    if (error) {
+      toast.error(error.message || 'Google sign-in failed');
+      setIsGoogleLoading(false);
+    }
+    // If no error, browser redirects to Google — no further action needed
   };
 
   return (
     <>
       <AnimatePresence>
         {isGoogleLoading && (
-          <GoogleAuthLoading onComplete={onGoogleAuthComplete} />
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-dark/80 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <GoogleAuthLoading />
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -125,6 +131,7 @@ export default function Register() {
                 {...register('fullName')}
                 type="text"
                 placeholder="Full Name"
+                autoComplete="name"
                 className={cn("w-full bg-surface border rounded-[6px] py-[10px] pl-[42px] pr-[16px] text-[14.5px] text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors", errors.fullName ? "border-danger" : "border-border")}
               />
             </div>
@@ -138,6 +145,7 @@ export default function Register() {
                 {...register('email')}
                 type="email"
                 placeholder="Email Address"
+                autoComplete="email"
                 className={cn("w-full bg-surface border rounded-[6px] py-[10px] pl-[42px] pr-[16px] text-[14.5px] text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors", errors.email ? "border-danger" : "border-border")}
               />
             </div>
@@ -152,6 +160,7 @@ export default function Register() {
                   {...register('password')}
                   type="password"
                   placeholder="Password"
+                  autoComplete="new-password"
                   className={cn("w-full bg-surface border rounded-[6px] py-[10px] pl-[42px] pr-[16px] text-[14.5px] text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors", errors.password ? "border-danger" : "border-border")}
                 />
               </div>
@@ -164,6 +173,7 @@ export default function Register() {
                   {...register('confirmPassword')}
                   type="password"
                   placeholder="Confirm Password"
+                  autoComplete="new-password"
                   className={cn("w-full bg-surface border rounded-[6px] py-[10px] pl-[42px] pr-[16px] text-[14.5px] text-text focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors", errors.confirmPassword ? "border-danger" : "border-border")}
                 />
               </div>
@@ -189,7 +199,8 @@ export default function Register() {
         <button 
           type="button"
           onClick={handleGoogleSignIn}
-          className="w-full mt-[28px] bg-surface hover:bg-surface-alt border border-border text-text font-medium py-[11px] rounded-[6px] transition-colors flex items-center justify-center gap-[10px] text-[14.5px] cursor-pointer hover:border-primary"
+          disabled={isGoogleLoading}
+          className="w-full mt-[28px] bg-surface hover:bg-surface-alt border border-border text-text font-medium py-[11px] rounded-[6px] transition-colors flex items-center justify-center gap-[10px] text-[14.5px] cursor-pointer hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <svg className="w-[18px] h-[18px]" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -197,7 +208,7 @@ export default function Register() {
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
           </svg>
-          Continue with Google
+          {isGoogleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
         </button>
 
         <p className="text-center mt-[32px] text-text-muted text-[14px]">
