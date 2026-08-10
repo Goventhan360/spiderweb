@@ -16,7 +16,7 @@ const loginSchema = z.object({
 });
 
 export default function Login() {
-  const { signIn, signInWithGoogle } = useAuth();
+  const { signIn, signInWithGoogle, switchRole } = useAuth();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -52,6 +52,12 @@ export default function Login() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDemoLogin = () => {
+    switchRole('candidate');
+    toast.success('Entered Candidate Demo Mode!');
+    navigate('/candidate/feed');
   };
 
   const handleGoogleSignIn = async () => {
@@ -129,6 +135,20 @@ export default function Login() {
           <p className="text-[14px] text-text-muted">Access jobs, career coaching, and AI resume studio.</p>
         </div>
 
+
+        {/* Demo Access Banner */}
+        <div className="mb-[20px] p-[14px] bg-surface-alt border border-primary/20 rounded-[8px]">
+          <p className="text-xs text-text-muted mb-2">
+            <span className="text-primary font-semibold">🎭 Try Demo Mode</span> — No account needed
+          </p>
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            className="w-full py-[9px] rounded-[6px] bg-primary/10 border border-primary/30 text-primary text-[13px] font-semibold hover:bg-primary/20 transition-colors"
+          >
+            ⚡ Quick Access — Candidate Demo
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-[18px]">
           <div>

@@ -136,7 +136,7 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    /* Real Supabase auth — no demo fallback when configured */
+    /* Real Supabase auth — check for demo override in localStorage first */
     const initAuth = async () => {
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
@@ -146,10 +146,17 @@ export function AuthProvider({ children }) {
           setIsDemo(false);
           await fetchProfile(currentSession.user.id, currentSession.user.user_metadata);
         } else {
-          // No active session — user is NOT authenticated
-          setUser(null);
-          setProfile(null);
-          setIsDemo(false);
+          // No active Supabase session — check if user chose demo mode
+          const storedDemoRole = localStorage.getItem('webloom_demo_role') || localStorage.getItem('spiderweb_demo_role');
+          if (storedDemoRole && DEMO_USERS[storedDemoRole]) {
+            setUser(DEMO_USERS[storedDemoRole]);
+            setProfile(DEMO_USERS[storedDemoRole]);
+            setIsDemo(true);
+          } else {
+            setUser(null);
+            setProfile(null);
+            setIsDemo(false);
+          }
         }
       } catch (err) {
         console.error('Auth initialization error:', err);
